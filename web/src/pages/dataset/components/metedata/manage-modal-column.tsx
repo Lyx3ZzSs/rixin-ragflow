@@ -56,6 +56,12 @@ export const useMetadataColumns = ({
     Record<string, boolean>
   >({});
 
+  const isSettingsMode =
+    metadataType === MetadataType.Setting ||
+    metadataType === MetadataType.SingleFileSetting ||
+    metadataType === MetadataType.UpdateSingle;
+
+  const showTypeColumn = isSettingsMode;
   const handleEditValue = (field: string, value: string) => {
     setEditingValue({ field, value, newValue: value });
   };

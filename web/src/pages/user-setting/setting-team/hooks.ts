@@ -44,7 +44,8 @@ export const useHandleDeleteUser = () => {
       title: t('setting.sureDelete'),
       onOk: async () => {
         const code = await deleteTenantUser({ userId });
-        if (code === 0) return;
+        if (code === 0) {
+        }
         return;
       },
     });

@@ -16,11 +16,12 @@ export const useBuildFormSelectOptions = (
         ...(RestrictedUpstreamMap[operatorName] ?? []),
       ];
       return nodes
-        .filter((x) => {
-          const isExcluded = excludedNodes.some((y) => y === x.data.label);
-          const isSelectedElsewhere = toList.some((y) => y === x.id);
-          return !isExcluded && x.id !== selfId && !isSelectedElsewhere;
-        })
+        .filter(
+          (x) =>
+            excludedNodes.every((y) => y !== x.data.label) &&
+            x.id !== selfId &&
+            !toList.some((y) => y === x.id), // filter out selected values in other to fields from the current drop-down box options
+        )
         .map((x) => ({ label: x.data.name, value: x.id }));
     },
     [nodes, operatorName, selfId],

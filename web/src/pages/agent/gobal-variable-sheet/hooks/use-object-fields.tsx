@@ -45,7 +45,7 @@ export const useObjectFields = () => {
         });
       }
       for (const key in obj) {
-        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        if (obj.hasOwnProperty(key)) {
           if (!/^[a-zA-Z_0-9]+$/.test(key)) {
             errors.push({
               path: [...path, key],

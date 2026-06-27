@@ -15,9 +15,7 @@ export function findEndOutput(list?: ITraceData[]) {
         const json = JSON.parse(str);
         return json;
       }
-    } catch {
-      return undefined;
-    }
+    } catch (error) {}
   }
 }
 

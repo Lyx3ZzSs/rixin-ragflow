@@ -49,7 +49,7 @@ export function SetMetaDialog({
           try {
             JSON.parse(value);
             return true;
-          } catch {
+          } catch (error) {
             return false;
           }
         },

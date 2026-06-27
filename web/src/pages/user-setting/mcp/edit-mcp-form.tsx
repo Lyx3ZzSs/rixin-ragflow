@@ -71,7 +71,9 @@ export function EditMcpForm({
   setFieldChanged: Dispatch<SetStateAction<boolean>>;
 }) {
   const { t } = useTranslation();
-  function onSubmit(data: z.infer<ReturnType<typeof useBuildFormSchema>>) {
+  const FormSchema = useBuildFormSchema();
+
+  function onSubmit(data: z.infer<typeof FormSchema>) {
     onOk?.(data);
   }
 

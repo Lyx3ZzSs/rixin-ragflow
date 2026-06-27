@@ -11,7 +11,7 @@ interface RerunButtonProps {
   loading?: boolean;
 }
 const RerunButton = (props: RerunButtonProps) => {
-  const { step, onRerun, loading } = props;
+  const { className, step, onRerun, loading } = props;
   const { t } = useTranslation();
   const clickFunc = () => {
     console.log('click rerun button');
