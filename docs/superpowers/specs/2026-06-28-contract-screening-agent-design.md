@@ -1,111 +1,111 @@
-# Contract Screening Agent Design
+# 合同智能筛选 Agent 设计方案
 
-Date: 2026-06-28
+日期：2026-06-28
 
-## Summary
+## 概要
 
-Build a contract screening Agent that lets users enter natural-language screening prompts, runs a backend screening task against parsed contract knowledge bases, and returns contract-first results with traceable evidence.
+建设一个合同智能筛选 Agent。用户登录后进入合同筛选工作台，通过自然语言描述筛选目标，后端基于已解析的合同知识库执行筛选任务，并返回以合同为单位的筛选结果和可追溯证据。
 
-The UI must follow the existing Open Design prototype at:
+UI 必须遵循现有 Open Design 原型：
 
 `/Users/liyuanxin/Library/Application Support/Open Design/namespaces/release-stable/data/projects/13d03357-ba9c-44d0-8ad1-9050ebc75d32`
 
-The prototype is a standalone Vite + React project. It should remain the UI baseline. The implementation should replace mock data and local filtering logic with RAGFlow-backed APIs, while preserving the current three-panel interaction model.
+该原型已经是独立的 Vite + React 项目。它应作为第一阶段的 UI 基线。实现时保留三栏工作台、对话式输入、合同结果卡片、证据详情面板等交互，只把 mock 数据和本地筛选逻辑替换为 RAGFlow 后端 API。
 
-## Core Decisions
+## 核心决策
 
-1. The contract Agent frontend uses an independent Vite React source boundary.
-2. Production deployment is same-site, not a second user-facing frontend service.
-3. The built contract Agent frontend is mounted under `/contract-agent`.
-4. RAGFlow remains the source of truth for login, permissions, knowledge bases, PDF parsing, OCR, chunks, retrieval, and LLM configuration.
-5. OCR defaults to remote PaddleOCR through the existing backend configuration.
-6. Screening results are contract-list-first. Evidence is shown in the right detail panel after selecting a contract.
-7. Phase 1 uses a deterministic screening pipeline, not an open-ended autonomous multi-agent flow.
+1. 合同 Agent 前端保持独立的 Vite React 源码边界。
+2. 生产环境不是两个用户可见的前端服务，而是在同一个 RAGFlow 站点下部署。
+3. 合同 Agent 构建产物挂载到 `/contract-agent`。
+4. RAGFlow 继续作为登录、权限、知识库、PDF 解析、OCR、Chunks、检索和 LLM 配置的事实来源。
+5. OCR 默认走已配置的远程 PaddleOCR。
+6. 筛选结果以“合同列表优先”展示，选中合同后在右侧面板查看证据。
+7. 第一阶段采用可控的结构化筛选流水线，不做开放式自主多 Agent 流程。
 
-## Non-Goals
+## 非目标
 
-- Do not merge the Open Design prototype into the main RAGFlow `web/` application in Phase 1.
-- Do not rewrite the prototype visual design.
-- Do not introduce CSS Modules or scoped CSS in Phase 1; keep the prototype stylesheet as the UI baseline.
-- Do not support screening contracts that have not finished parsing.
-- Do not build a separate authentication system.
-- Do not expose raw chunk lists as the primary result view.
+- 第一阶段不把 Open Design 原型合并进 RAGFlow 主前端 `web/`。
+- 不重写原型视觉设计。
+- 第一阶段不引入 CSS Modules 或作用域 CSS，继续使用原型的 `src/styles.css`。
+- 不筛选尚未完成解析的合同。
+- 不建设独立账号系统。
+- 不把原始 Chunk 列表作为主结果视图。
 
-## Deployment Shape
+## 部署形态
 
-Development can run the contract Agent with its own Vite dev server for fast iteration:
-
-```text
-RAGFlow web dev:       http://127.0.0.1:8000
-Contract Agent dev:   http://127.0.0.1:5173
-RAGFlow API/backend:  http://127.0.0.1:9380
-```
-
-Production should serve a single user-facing site:
+开发阶段可以让合同 Agent 使用自己的 Vite dev server，便于快速调试：
 
 ```text
-/                  -> existing RAGFlow frontend
-/contract-agent    -> contract screening Agent frontend
-/api/...           -> existing and new RAGFlow backend APIs
+RAGFlow 主前端开发地址：  http://127.0.0.1:8000
+合同 Agent 开发地址：    http://127.0.0.1:5173
+RAGFlow API/后端：       http://127.0.0.1:9380
 ```
 
-The contract Agent build output can be copied into a static serving path for the RAGFlow/Nginx deployment. Users should not need to know that the Agent has a separate source project.
+生产阶段对用户只暴露一个站点：
 
-## Authentication and Entry
+```text
+/                  -> 现有 RAGFlow 前端
+/contract-agent    -> 合同智能筛选 Agent 前端
+/api/...           -> 现有和新增的 RAGFlow 后端 API
+```
 
-The Agent uses the existing RAGFlow login session or token. After successful login, a configurable redirect can send users to `/contract-agent`.
+合同 Agent 的构建产物可以复制到 RAGFlow/Nginx 的静态资源路径下。用户不需要感知它在源码层面是独立前端项目。
 
-Configuration should control the behavior:
+## 登录与入口
+
+合同 Agent 复用现有 RAGFlow 登录 session 或 token。登录成功后，可以通过配置开关默认跳转到 `/contract-agent`。
+
+建议配置：
 
 ```text
 CONTRACT_AGENT_ENABLED=true
 CONTRACT_AGENT_DEFAULT_ROUTE=/contract-agent
 ```
 
-When disabled, RAGFlow keeps its existing login redirect behavior.
+关闭该开关时，RAGFlow 保持原有登录跳转行为。
 
-## Frontend Design
+## 前端设计
 
-The Open Design prototype provides the Phase 1 UI. Its current structure maps to production behavior as follows.
+Open Design 原型作为第一阶段 UI 基线。当前结构映射到生产行为如下。
 
-### Prototype Files
+### 原型文件
 
-- `src/App.jsx`: three-panel workbench, conversation flow, result cards, evidence panel.
-- `src/styles.css`: design tokens, layout, responsive behavior, component styling.
-- `src/data.js`: mock contracts and prompt examples.
-- `src/logic.js`: local mock filtering and audit text helpers.
-- `src/logic.test.js`: current local logic tests.
+- `src/App.jsx`：三栏工作台、对话流、结果卡片、证据面板。
+- `src/styles.css`：设计 token、布局、响应式行为、组件样式。
+- `src/data.js`：mock 合同数据和 Prompt 示例。
+- `src/logic.js`：本地 mock 筛选和审计文本工具。
+- `src/logic.test.js`：当前本地逻辑测试。
 
-### UI Areas
+### UI 区域
 
-The implemented UI keeps these areas:
+实现后继续保留：
 
-- Header: product identity, history toggle, evidence toggle.
-- Left panel: conversation history.
-- Center panel: prompt input, streaming task phases, contract result cards.
-- Right panel: selected contract evidence and suggested actions.
-- Toasts: copy, queued action, failure feedback.
+- 顶部栏：产品标识、历史面板开关、证据面板开关。
+- 左侧面板：对话历史。
+- 中间面板：Prompt 输入、任务流式阶段、合同结果卡片。
+- 右侧面板：选中合同的证据详情和建议动作。
+- Toast：复制、加入待办、失败反馈等轻提示。
 
-### UI Changes From Prototype
+### 相对原型的行为变化
 
-The visual layout remains the same. Data behavior changes:
+视觉布局不变，数据行为变化：
 
-- `src/data.js` becomes development-only mock data.
-- `smartFilter` and local filtering are replaced by API calls.
-- Streaming phases are driven by backend task status.
-- Contract cards render backend task results.
-- The evidence panel renders backend evidence fields.
-- Conversation history is persisted locally in Phase 1 and can be moved to backend storage in Phase 2.
+- `src/data.js` 只作为开发 mock 数据。
+- `smartFilter` 和本地筛选逻辑替换为 API 调用。
+- 流式阶段由后端任务状态驱动。
+- 合同卡片渲染后端筛选结果。
+- 证据面板渲染后端返回的证据字段。
+- 第一阶段对话历史本地持久化，第二阶段再迁移到后端持久化。
 
-## Backend API
+## 后端 API
 
-Add a small contract screening API surface. It should not change existing knowledge base, document, chunk, or retrieval API semantics.
+新增一组小而独立的合同筛选 API。不要改变现有知识库、文档、Chunk 或检索 API 的语义。
 
-### Create Task
+### 创建筛选任务
 
 `POST /api/v1/contract-screening/tasks`
 
-Request:
+请求：
 
 ```json
 {
@@ -119,7 +119,7 @@ Request:
 }
 ```
 
-Response:
+响应：
 
 ```json
 {
@@ -130,11 +130,11 @@ Response:
 }
 ```
 
-### Get Task Status
+### 查询任务状态
 
 `GET /api/v1/contract-screening/tasks/{task_id}`
 
-Response:
+响应：
 
 ```json
 {
@@ -142,14 +142,14 @@ Response:
   "data": {
     "task_id": "screening-task-id",
     "status": "running",
-    "phase": "reviewing_evidence",
+    "phase": "review_evidence",
     "progress": 0.68,
     "message": "正在复核合同证据"
   }
 }
 ```
 
-Allowed statuses:
+允许的任务状态：
 
 - `pending`
 - `running`
@@ -157,7 +157,7 @@ Allowed statuses:
 - `failed`
 - `cancelled`
 
-Allowed phases:
+允许的任务阶段：
 
 - `parse_prompt`
 - `retrieve_candidates`
@@ -165,11 +165,11 @@ Allowed phases:
 - `rank_contracts`
 - `generate_summary`
 
-### Get Results
+### 获取筛选结果
 
 `GET /api/v1/contract-screening/tasks/{task_id}/results`
 
-Response:
+响应：
 
 ```json
 {
@@ -218,134 +218,134 @@ Response:
 }
 ```
 
-### Optional Evidence Detail
+### 可选的证据详情接口
 
-If Phase 1 result payload becomes too large, move evidence details behind:
+如果第一阶段结果 payload 过大，可以把证据详情拆到独立接口：
 
 `GET /api/v1/contract-screening/documents/{document_id}/evidence?task_id={task_id}`
 
-The UI can still behave the same: selecting a contract opens the right evidence panel.
+前端交互不变：用户点击合同结果卡片后，右侧证据面板展示详情。
 
-## Screening Pipeline
+## 筛选流水线
 
-Phase 1 uses a controlled pipeline:
+第一阶段采用可控流水线：
 
-1. Validate the user and selected knowledge base.
-2. Parse the natural-language prompt into screening intent and conditions.
-3. Restrict documents to parsed contracts with available chunks.
-4. Retrieve candidate chunks using existing RAGFlow retrieval/search capabilities.
-5. Group candidate chunks by document.
-6. Ask the configured LLM to judge each candidate contract against the parsed conditions.
-7. Generate a contract-level summary, confidence score, and evidence list.
-8. Persist task status and results.
-9. Return contract-list-first results to the frontend.
+1. 校验用户身份和知识库权限。
+2. 将自然语言 Prompt 解析为筛选意图和筛选条件。
+3. 限定候选文档为已经解析完成且有 Chunk 的合同。
+4. 复用 RAGFlow 现有检索能力召回候选 Chunk。
+5. 按文档聚合候选 Chunk。
+6. 调用已配置 LLM，逐份合同判断是否满足筛选条件。
+7. 生成合同级摘要、置信度和证据列表。
+8. 持久化任务状态和结果。
+9. 向前端返回合同列表优先的结果。
 
-The pipeline should prefer explainability over autonomy. Every included contract must have evidence. If a condition cannot be verified, the result should say evidence is insufficient instead of inventing an answer.
+流水线优先保证可解释性，而不是自主性。每一份命中的合同都必须有证据引用。如果某个条件无法核验，结果应明确说明“证据不足”，不能编造结论。
 
-## OCR and Knowledge Base Flow
+## OCR 与知识库流程
 
-Contract files are uploaded and parsed through existing RAGFlow knowledge base flows:
+合同文件继续走 RAGFlow 现有知识库流程：
 
-1. User uploads PDFs to a contract knowledge base.
-2. Backend parses PDFs using remote PaddleOCR by default.
-3. Parsed text is chunked and indexed.
-4. Contract Agent screens only documents whose parse status is complete.
-5. Documents still parsing are excluded and reported in task metadata.
+1. 用户将 PDF 上传到合同知识库。
+2. 后端默认使用远程 PaddleOCR 解析 PDF。
+3. 解析后的文本进入 Chunk 切分和索引。
+4. 合同 Agent 只筛选解析完成的文档。
+5. 尚在解析中的文档不进入候选集，并在任务元信息中说明被跳过数量。
 
-The existing remote PaddleOCR configuration remains the default OCR path. Local OCR should not be loaded by default.
+现有远程 PaddleOCR 配置继续作为默认 OCR 路径。系统不再默认加载本地 OCR。
 
-## Error Handling
+## 错误处理
 
-Frontend behavior:
+前端行为：
 
-- Empty prompt: keep send button disabled.
-- Missing knowledge base: show a clear action message.
-- Task failed: show the backend failure message in the conversation.
-- No matched contracts: show a normal empty result, not an error.
-- Partially parsed knowledge base: show how many documents were skipped because parsing is not complete.
-- Session expired: redirect to RAGFlow login.
+- Prompt 为空时，发送按钮禁用。
+- 未选择知识库时，给出明确操作提示。
+- 任务失败时，在对话中展示后端失败信息。
+- 没有命中合同时，展示正常空结果，不按错误处理。
+- 知识库部分文档尚未解析完成时，展示被跳过的文档数量。
+- 登录过期时，跳转回 RAGFlow 登录页。
 
-Backend behavior:
+后端行为：
 
-- Invalid prompt returns a validation error with a user-readable message.
-- Missing or unauthorized knowledge base returns a permission error.
-- No parsed documents returns a successful empty result with skipped document counts.
-- LLM failure marks the task failed and preserves the error message.
-- Retrieval failure marks the task failed; it should not return fabricated results.
+- Prompt 无效时返回用户可读的校验错误。
+- 知识库不存在或无权限时返回权限错误。
+- 没有已解析文档时返回成功的空结果，并包含跳过数量。
+- LLM 调用失败时任务标记为失败，并保留错误信息。
+- 检索失败时任务标记为失败，不返回伪造结果。
 
-## Testing
+## 测试
 
-Frontend tests:
+前端测试：
 
-- API adapter maps backend result fields into the existing card/evidence shape.
-- Prompt submission creates a task and starts polling.
-- Polling stops on `done`, `failed`, or `cancelled`.
-- Selecting a result updates the evidence panel.
-- Empty result and failed task states render correctly.
+- API adapter 能把后端字段映射为现有合同卡片和证据面板结构。
+- 提交 Prompt 后能创建任务并开始轮询。
+- 任务进入 `done`、`failed` 或 `cancelled` 后停止轮询。
+- 选择结果卡片后能更新右侧证据面板。
+- 空结果和失败状态能正确渲染。
 
-Backend tests:
+后端测试：
 
-- Task creation validates `kb_id` and `prompt`.
-- Screening excludes documents that are not parsed.
-- Prompt parser returns structured conditions.
-- Retrieval candidates are grouped by document.
-- LLM judgment output is normalized into contract-level results.
-- Results include evidence with document id, chunk id, page, and text.
-- Permission checks prevent cross-tenant access.
+- 创建任务时校验 `kb_id` 和 `prompt`。
+- 筛选时排除未解析完成的文档。
+- Prompt 解析器能返回结构化条件。
+- 检索候选能按文档聚合。
+- LLM 判断结果能归一化为合同级结果。
+- 结果包含文档 ID、Chunk ID、页码和证据文本。
+- 权限校验能阻止跨租户访问。
 
-Integration checks:
+集成检查：
 
-- Upload PDF, parse through remote PaddleOCR, wait for chunks, run screening prompt, see contract cards and evidence.
-- Login redirects to `/contract-agent` only when the feature flag is enabled.
-- Production build can be served under `/contract-agent`.
+- 上传 PDF，通过远程 PaddleOCR 完成解析，等待 Chunks 生成后运行筛选 Prompt，前端能看到合同卡片和证据。
+- 只有开启功能开关时，登录后才默认跳转 `/contract-agent`。
+- 生产构建产物可以挂载在 `/contract-agent` 下访问。
 
-## Rollout Plan
+## 分阶段计划
 
-Phase 1:
+第一阶段：
 
-- Add contract Agent frontend source boundary based on the Open Design prototype.
-- Add backend contract screening task APIs.
-- Replace mock data with API-driven task creation, polling, and results.
-- Serve the built Agent under `/contract-agent`.
-- Add configurable login redirect.
+- 基于 Open Design 原型新增合同 Agent 前端源码边界。
+- 新增后端合同筛选任务 API。
+- 用 API 驱动的任务创建、轮询和结果替换 mock 数据。
+- 将构建产物挂载到 `/contract-agent`。
+- 增加可配置登录跳转。
 
-Phase 2:
+第二阶段：
 
-- Persist task history per user.
-- Add export to Excel or Word.
-- Add condition editing after prompt parsing.
-- Add result feedback for tuning.
+- 按用户持久化任务历史。
+- 支持导出 Excel 或 Word。
+- 支持 Prompt 解析后编辑条件。
+- 增加结果反馈，用于后续调优。
 
-Phase 3:
+第三阶段：
 
-- Add multi-turn clarification.
-- Add contract metadata extraction and normalized fields.
-- Add risk scoring templates.
-- Generate formal screening reports.
+- 增加多轮澄清能力。
+- 增加合同元数据抽取和标准化字段。
+- 增加风险评分模板。
+- 生成正式筛选报告。
 
-## Risks and Mitigations
+## 风险与缓解
 
-- Risk: CSS conflicts if merged into RAGFlow `web/`.
-  - Mitigation: keep source and build output independent; mount under `/contract-agent`.
+- 风险：如果直接合并进 RAGFlow `web/`，可能产生 CSS 冲突。
+  - 缓解：保持源码和构建产物独立，挂载到 `/contract-agent`。
 
-- Risk: LLM returns unsupported or fabricated evidence.
-  - Mitigation: require evidence references from retrieved chunks and reject unsupported claims.
+- 风险：LLM 返回缺少证据支持或编造的结论。
+  - 缓解：要求结论必须引用检索到的 Chunk 证据，拒绝无证据结论。
 
-- Risk: OCR and parsing latency make screening appear broken.
-  - Mitigation: show parse status, skip unparsed documents, and explain skipped counts.
+- 风险：OCR 和解析耗时较长，用户误以为筛选失败。
+  - 缓解：展示解析状态，跳过未解析文档，并说明跳过数量。
 
-- Risk: Authentication becomes duplicated.
-  - Mitigation: use existing RAGFlow session/token and same-site deployment.
+- 风险：认证体系重复建设。
+  - 缓解：使用现有 RAGFlow session/token，并同域部署。
 
-- Risk: Results become too chunk-centric for business users.
-  - Mitigation: contract-list-first result model with evidence only in the detail panel.
+- 风险：结果过于 Chunk 化，不符合业务用户习惯。
+  - 缓解：坚持合同列表优先，证据只在详情面板中展开。
 
-## Approval State
+## 已确认方向
 
-The approved product direction is:
+已确认的产品方向：
 
-- Follow the existing Open Design prototype for UI.
-- Keep the contract Agent frontend source independent.
-- Deploy it on the same RAGFlow site under `/contract-agent`.
-- Reuse RAGFlow login and backend services.
-- Return contract-list-first screening results with traceable evidence.
+- UI 按现有 Open Design 原型实现。
+- 合同 Agent 前端源码保持独立。
+- 生产部署在同一个 RAGFlow 站点下，路径为 `/contract-agent`。
+- 复用 RAGFlow 登录和后端服务。
+- 筛选结果按合同列表优先展示，并提供可追溯证据。
