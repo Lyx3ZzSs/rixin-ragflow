@@ -6,6 +6,7 @@ import {
   buildConversationTitle,
   filterContracts,
   normalizeTimelineItems,
+  resolvePollingConfig,
   statusClass,
   strategyToText,
   taskPhaseToLabel
@@ -18,6 +19,7 @@ const DEFAULT_FILTERS = {
 };
 
 const TERMINAL_TASK_STATUSES = new Set(["done", "failed", "cancelled"]);
+const POLLING_CONFIG = resolvePollingConfig(import.meta.env);
 
 /* ─── SVG icons ──────────────────────────────────────────────────── */
 
@@ -1035,7 +1037,7 @@ export default function App() {
     });
   }
 
-  function waitForNextPoll() {
+  function waitForNextPoll(intervalMs) {
     return new Promise((resolve) => {
       if (!mountedRef.current) {
         resolve();
@@ -1051,12 +1053,16 @@ export default function App() {
       const timer = window.setTimeout(() => {
         timers.current = timers.current.filter((item) => item !== timer);
         wrappedResolve();
-      }, 1500);
+      }, intervalMs);
       timers.current.push(timer);
     });
   }
 
-  async function pollScreeningTask(taskId, runId, maxAttempts = 120, intervalMs = 1500) {
+  async function pollScreeningTask(
+    taskId,
+    runId,
+    { maxAttempts, intervalMs } = POLLING_CONFIG
+  ) {
     for (let attempt = 0; attempt < maxAttempts && isActiveScreeningRun(runId); attempt += 1) {
       const current = await getScreeningTask(taskId);
       if (!isActiveScreeningRun(runId)) {
@@ -1072,7 +1078,7 @@ export default function App() {
         return { ...current, status };
       }
 
-      await waitForNextPoll();
+      await waitForNextPoll(intervalMs);
     }
 
     if (isActiveScreeningRun(runId)) {

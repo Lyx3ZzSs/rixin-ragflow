@@ -17,6 +17,7 @@
 import inspect
 import json
 import time
+import asyncio
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -26,7 +27,8 @@ from rag.utils.redis_conn import REDIS_CONN
 
 DEFAULT_FILTERS = {"risk": "全部", "status": "全部", "source": "全部"}
 TASK_TTL_SECONDS = 60 * 60 * 24
-TASK_STALE_SECONDS = 10 * 60
+TASK_STALE_SECONDS = 30 * 60
+TASK_HEARTBEAT_SECONDS = 30
 ACTIVE_TASK_STATUSES = {"pending", "running"}
 
 
@@ -366,13 +368,36 @@ async def _call_search_service(
         search_service = dataset_api_service
 
     if hasattr(search_service, "search_datasets"):
-        result = search_service.search_datasets(tenant_id, req)
+        method = search_service.search_datasets
+        args = (tenant_id, req)
     else:
-        result = search_service.search(task["kb_id"], tenant_id, req)
+        method = search_service.search
+        args = (task["kb_id"], tenant_id, req)
 
-    if inspect.isawaitable(result):
-        return await result
-    return result
+    if inspect.iscoroutinefunction(method):
+        return await method(*args)
+
+    return await asyncio.to_thread(method, *args)
+
+
+async def _await_with_heartbeat(
+    awaitable: Any,
+    *,
+    store: ContractScreeningStore,
+    task: dict[str, Any],
+    heartbeat_seconds: float,
+) -> Any:
+    pending = asyncio.create_task(awaitable)
+    try:
+        while True:
+            done, _ = await asyncio.wait({pending}, timeout=heartbeat_seconds)
+            if done:
+                return pending.result()
+            save_task_or_raise(store, task)
+    except Exception:
+        if not pending.done():
+            pending.cancel()
+        raise
 
 
 def _normalize_search_result(result: Any) -> dict[str, Any]:
@@ -396,6 +421,7 @@ async def run_screening_task(
     task_id: str,
     store: ContractScreeningStore | None = None,
     search_service: Any = None,
+    heartbeat_seconds: float = TASK_HEARTBEAT_SECONDS,
 ) -> dict[str, Any]:
     store = store or ContractScreeningStore()
     task = store.get(tenant_id, task_id)
@@ -415,7 +441,12 @@ async def run_screening_task(
         save_task_or_raise(store, task)
 
         req = _build_search_request(task)
-        result = await _call_search_service(search_service, tenant_id, task, req)
+        result = await _await_with_heartbeat(
+            _call_search_service(search_service, tenant_id, task, req),
+            store=store,
+            task=task,
+            heartbeat_seconds=heartbeat_seconds,
+        )
         result = _normalize_search_result(result)
 
         task.update({

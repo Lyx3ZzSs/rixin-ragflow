@@ -19,8 +19,10 @@ from api.apps.services.contract_screening_service import (
 class FakeRedis:
     def __init__(self):
         self.values = {}
+        self.saved = []
 
     def set_obj(self, key, obj, exp=3600):
+        self.saved.append(json.loads(json.dumps(obj, ensure_ascii=False)))
         self.values[key] = json.dumps(obj, ensure_ascii=False)
         return True
 
@@ -63,6 +65,15 @@ class SearchStub:
 
     async def search(self, dataset_id, tenant_id, req):
         self.calls.append({"dataset_id": dataset_id, "tenant_id": tenant_id, "req": req})
+        return self.result
+
+
+class SlowSearchStub:
+    def __init__(self, result):
+        self.result = result
+
+    async def search_datasets(self, tenant_id, req):
+        await asyncio.sleep(0.02)
         return self.result
 
 
@@ -160,6 +171,31 @@ def test_run_screening_task_retrieves_and_sorts_contract_results():
     saved = store.get("tenant-1", "task-1")
     assert saved["status"] == "done"
     assert saved["items"][0]["contract_id"] == "doc-high"
+
+
+def test_run_screening_task_heartbeats_while_waiting_for_search():
+    redis = FakeRedis()
+    store = ContractScreeningStore(redis=redis, ttl_seconds=60)
+    _new_saved_task(store)
+
+    asyncio.run(
+        run_screening_task(
+            "tenant-1",
+            "task-1",
+            store=store,
+            search_service=SlowSearchStub({"chunks": []}),
+            heartbeat_seconds=0.001,
+        )
+    )
+
+    heartbeat_saves = [
+        task
+        for task in redis.saved
+        if task.get("status") == "running"
+        and task.get("phase") == "retrieve_candidates"
+        and task.get("message") == "正在检索候选合同"
+    ]
+    assert len(heartbeat_saves) >= 2
 
 
 def test_run_screening_task_fails_fast_when_progress_save_fails():

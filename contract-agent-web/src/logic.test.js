@@ -6,6 +6,7 @@ import {
   buildConversationTitle,
   filterContracts,
   normalizeTimelineItems,
+  resolvePollingConfig,
   strategyToText,
   taskPhaseToLabel
 } from "./logic.js";
@@ -130,4 +131,33 @@ test("normalizeTimelineItems preserves tuples and stringifies malformed nodes", 
     ["节点", "[object Object]"]
   ]);
   assert.deepEqual(normalizeTimelineItems(undefined), []);
+});
+
+test("resolvePollingConfig uses longer defaults and accepts positive env overrides", () => {
+  assert.deepEqual(resolvePollingConfig({}), {
+    maxAttempts: 600,
+    intervalMs: 2000
+  });
+
+  assert.deepEqual(
+    resolvePollingConfig({
+      VITE_CONTRACT_AGENT_POLL_MAX_ATTEMPTS: "5",
+      VITE_CONTRACT_AGENT_POLL_INTERVAL_MS: "250"
+    }),
+    {
+      maxAttempts: 5,
+      intervalMs: 250
+    }
+  );
+
+  assert.deepEqual(
+    resolvePollingConfig({
+      VITE_CONTRACT_AGENT_POLL_MAX_ATTEMPTS: "-1",
+      VITE_CONTRACT_AGENT_POLL_INTERVAL_MS: "0"
+    }),
+    {
+      maxAttempts: 600,
+      intervalMs: 2000
+    }
+  );
 });

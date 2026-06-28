@@ -43,6 +43,13 @@ export function normalizeTimelineItems(timeline) {
   });
 }
 
+export function resolvePollingConfig(env = {}) {
+  return {
+    maxAttempts: positiveInteger(env.VITE_CONTRACT_AGENT_POLL_MAX_ATTEMPTS, 600),
+    intervalMs: positiveInteger(env.VITE_CONTRACT_AGENT_POLL_INTERVAL_MS, 2000)
+  };
+}
+
 export function filterContracts(contracts, filters) {
   return contracts
     .filter((item) => filters.risk === "全部" || item.risk === filters.risk)
@@ -128,4 +135,9 @@ function valueToText(value) {
   }
 
   return String(value);
+}
+
+function positiveInteger(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
