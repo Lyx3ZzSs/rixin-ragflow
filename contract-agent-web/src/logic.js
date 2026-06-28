@@ -45,13 +45,13 @@ export function strategyToText(strategy) {
     lines.push(`条件: ${strategy.conditions.map(conditionToText).filter(Boolean).join("; ")}`);
   }
   if (strategy.filters && Object.keys(strategy.filters).length > 0) {
-    lines.push(`过滤: ${Object.entries(strategy.filters).map(([key, value]) => `${key}=${value}`).join("; ")}`);
+    lines.push(`过滤: ${objectToText(strategy.filters)}`);
   }
   if (strategy.evidence_policy) {
-    lines.push(`证据策略: ${strategy.evidence_policy}`);
+    lines.push(`证据策略: ${valueToText(strategy.evidence_policy)}`);
   }
   if (strategy.limit_per_condition !== undefined && strategy.limit_per_condition !== null) {
-    lines.push(`每条件证据上限: ${strategy.limit_per_condition}`);
+    lines.push(`每条件证据上限: ${valueToText(strategy.limit_per_condition)}`);
   }
 
   return lines.join("\n");
@@ -66,4 +66,21 @@ function conditionToText(condition) {
   }
 
   return condition.status ? `${condition.label} (${condition.status})` : condition.label;
+}
+
+function objectToText(value) {
+  return Object.entries(value)
+    .map(([key, item]) => `${key}=${valueToText(item)}`)
+    .join("; ");
+}
+
+function valueToText(value) {
+  if (Array.isArray(value)) {
+    return value.map(valueToText).join(", ");
+  }
+  if (value && typeof value === "object") {
+    return objectToText(value);
+  }
+
+  return String(value);
 }
