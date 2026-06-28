@@ -5,6 +5,7 @@ import {
   buildAuditText,
   buildConversationTitle,
   filterContracts,
+  normalizeTimelineItems,
   statusClass,
   strategyToText,
   taskPhaseToLabel
@@ -241,7 +242,7 @@ function EvidencePanel({ item, onClose, onQueueOne, onCopyEvidence, toastMessage
 
   const evidenceItems = Array.isArray(item.evidence) ? item.evidence : [];
   const actionItems = Array.isArray(item.actions) ? item.actions : [];
-  const timelineItems = Array.isArray(item.timeline) ? item.timeline : [];
+  const timelineItems = normalizeTimelineItems(item.timeline);
 
   return (
     <div className="evidence-panel">
@@ -736,6 +737,15 @@ function taskFailureMessage(task, fallback = "任务失败") {
   return task?.message || task?.error || task?.detail || fallback;
 }
 
+function createEmptyConversation() {
+  return {
+    id: `conv-${Date.now()}`,
+    title: "新的筛选任务",
+    time: formatConversationTime(),
+    messages: []
+  };
+}
+
 export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
@@ -752,6 +762,9 @@ export default function App() {
   const [activeConversationId, setActiveConversationId] = useState("conv-1");
 
   const timers = useRef([]);
+  const mountedRef = useRef(true);
+  const pollWaitResolversRef = useRef([]);
+  const screeningRunRef = useRef(0);
   const inputRef = useRef(null);
 
   const activeConversation = useMemo(
@@ -761,14 +774,43 @@ export default function App() {
 
   const messages = activeConversation?.messages || [];
 
-  useEffect(() => () => timers.current.forEach((timer) => window.clearTimeout(timer)), []);
+  useEffect(
+    () => {
+      mountedRef.current = true;
+
+      return () => {
+        mountedRef.current = false;
+        screeningRunRef.current += 1;
+        timers.current.forEach((timer) => window.clearTimeout(timer));
+        timers.current = [];
+        pollWaitResolversRef.current.forEach((resolve) => resolve());
+        pollWaitResolversRef.current = [];
+      };
+    },
+    []
+  );
 
   /* ─── Actions ─────────────────────────────────────────────────── */
 
-  function showToast(message) {
-    setToast({ message, visible: true });
-    const timer = window.setTimeout(() => setToast((current) => ({ ...current, visible: false })), 2000);
+  function scheduleTimer(callback, delay) {
+    const timer = window.setTimeout(() => {
+      timers.current = timers.current.filter((item) => item !== timer);
+      if (mountedRef.current) {
+        callback();
+      }
+    }, delay);
     timers.current.push(timer);
+    return timer;
+  }
+
+  function isActiveScreeningRun(runId) {
+    return mountedRef.current && screeningRunRef.current === runId;
+  }
+
+  function showToast(message) {
+    if (!mountedRef.current) return;
+    setToast({ message, visible: true });
+    scheduleTimer(() => setToast((current) => ({ ...current, visible: false })), 2000);
   }
 
   function copyText(text, message) {
@@ -803,12 +845,7 @@ export default function App() {
   }
 
   function newConversation() {
-    const newConv = {
-      id: `conv-${Date.now()}`,
-      title: "新的筛选任务",
-      time: formatConversationTime(),
-      messages: []
-    };
+    const newConv = createEmptyConversation();
     setConversations((prev) => [newConv, ...prev]);
     setActiveConversationId(newConv.id);
     setHistoryOpen(true);
@@ -816,17 +853,25 @@ export default function App() {
     setEvidenceItem(null);
     setEvidenceToast("");
     // Auto-focus input after render
-    setTimeout(() => inputRef.current?.focus(), 100);
+    scheduleTimer(() => inputRef.current?.focus(), 100);
   }
 
   function deleteConversation(id) {
-    setConversations((prev) => {
-      const next = prev.filter((c) => c.id !== id);
-      if (id === activeConversationId && next.length > 0) {
-        setActiveConversationId(next[0].id);
-      }
-      return next;
-    });
+    if (id === streamingConversationId) {
+      showToast("筛选进行中，完成后再删除");
+      return;
+    }
+
+    const next = conversations.filter((c) => c.id !== id);
+    if (id === activeConversationId) {
+      const replacement = next.length > 0 ? null : createEmptyConversation();
+      const nextConversations = next.length > 0 ? next : [replacement];
+      setConversations(nextConversations);
+      setActiveConversationId(nextConversations[0].id);
+    } else {
+      setConversations(next);
+    }
+
     if (id === evidenceItem?.id) {
       setEvidenceItem(null);
       setEvidenceOpen(false);
@@ -855,7 +900,7 @@ export default function App() {
     });
     copyText(text, "已复制证据包");
     setEvidenceToast("已复制");
-    setTimeout(() => setEvidenceToast(""), 2000);
+    scheduleTimer(() => setEvidenceToast(""), 2000);
   }
 
   function handleCopyAudit(msg) {
@@ -874,6 +919,7 @@ export default function App() {
   }
 
   function appendMessagesToConversation(conversationId, messagesToAppend, { titlePrompt } = {}) {
+    if (!mountedRef.current) return;
     setConversations((prev) =>
       prev.map((conv) => {
         if (conv.id !== conversationId) return conv;
@@ -888,6 +934,8 @@ export default function App() {
   }
 
   function updateStreamingPhase(phase) {
+    if (!mountedRef.current) return;
+
     const key = phase || "processing";
     const label = taskPhaseToLabel(phase);
 
@@ -908,14 +956,32 @@ export default function App() {
 
   function waitForNextPoll() {
     return new Promise((resolve) => {
-      const timer = window.setTimeout(resolve, 1500);
+      if (!mountedRef.current) {
+        resolve();
+        return;
+      }
+
+      const wrappedResolve = () => {
+        pollWaitResolversRef.current = pollWaitResolversRef.current.filter((item) => item !== wrappedResolve);
+        resolve();
+      };
+      pollWaitResolversRef.current.push(wrappedResolve);
+
+      const timer = window.setTimeout(() => {
+        timers.current = timers.current.filter((item) => item !== timer);
+        wrappedResolve();
+      }, 1500);
       timers.current.push(timer);
     });
   }
 
-  async function pollScreeningTask(taskId) {
-    while (true) {
+  async function pollScreeningTask(taskId, runId) {
+    while (isActiveScreeningRun(runId)) {
       const current = await getScreeningTask(taskId);
+      if (!isActiveScreeningRun(runId)) {
+        return null;
+      }
+
       if (current?.phase) {
         updateStreamingPhase(current.phase);
       }
@@ -927,6 +993,8 @@ export default function App() {
 
       await waitForNextPoll();
     }
+
+    return null;
   }
 
   async function handleSend(text) {
@@ -948,6 +1016,8 @@ export default function App() {
       return;
     }
 
+    const runId = screeningRunRef.current + 1;
+    screeningRunRef.current = runId;
     setIsStreaming(true);
     setStreamingConversationId(conversationId);
     setStreamingPhases([{ key: "parse_prompt", label: taskPhaseToLabel("parse_prompt"), done: false }]);
@@ -963,13 +1033,19 @@ export default function App() {
         throw new Error("后端未返回任务 ID");
       }
 
-      const completedTask = await pollScreeningTask(taskId);
+      if (!isActiveScreeningRun(runId)) return;
+
+      const completedTask = await pollScreeningTask(taskId, runId);
+      if (!isActiveScreeningRun(runId) || !completedTask) return;
+
       if (completedTask.status === "failed" || completedTask.status === "cancelled") {
         throw new Error(taskFailureMessage(completedTask, completedTask.status === "cancelled" ? "任务已取消" : "任务失败"));
       }
 
       setStreamingPhases((prev) => prev.map((phase) => ({ ...phase, done: true })));
       const result = await getScreeningResults(taskId);
+      if (!isActiveScreeningRun(runId)) return;
+
       const items = Array.isArray(result?.items) ? result.items : [];
       const agentMsg = {
         id: nextMessageId(),
@@ -982,6 +1058,8 @@ export default function App() {
       appendMessagesToConversation(conversationId, [agentMsg]);
       showToast(`已筛选 ${items.length} 份合同`);
     } catch (error) {
+      if (!isActiveScreeningRun(runId)) return;
+
       const message = error instanceof Error ? error.message : String(error || "任务失败");
       appendMessagesToConversation(conversationId, [
         {
@@ -992,9 +1070,11 @@ export default function App() {
       ]);
       showToast("筛选失败");
     } finally {
-      setIsStreaming(false);
-      setStreamingConversationId(null);
-      setStreamingPhases([]);
+      if (isActiveScreeningRun(runId)) {
+        setIsStreaming(false);
+        setStreamingConversationId(null);
+        setStreamingPhases([]);
+      }
     }
   }
 

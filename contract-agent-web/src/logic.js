@@ -29,6 +29,20 @@ export function taskPhaseToLabel(phase) {
   return labels[phase] || "正在处理";
 }
 
+export function normalizeTimelineItems(timeline) {
+  if (!Array.isArray(timeline)) {
+    return [];
+  }
+
+  return timeline.map((item) => {
+    if (Array.isArray(item) && item.length >= 2) {
+      return [item[0], item[1]];
+    }
+
+    return ["节点", String(item)];
+  });
+}
+
 export function filterContracts(contracts, filters) {
   return contracts
     .filter((item) => filters.risk === "全部" || item.risk === filters.risk)

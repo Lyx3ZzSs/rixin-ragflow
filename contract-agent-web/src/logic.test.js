@@ -5,6 +5,7 @@ import {
   buildAuditText,
   buildConversationTitle,
   filterContracts,
+  normalizeTimelineItems,
   strategyToText,
   taskPhaseToLabel
 } from "./logic.js";
@@ -120,4 +121,13 @@ test("taskPhaseToLabel maps backend task phases to display labels", () => {
   assert.equal(taskPhaseToLabel("generate_summary"), "生成筛选结果");
   assert.equal(taskPhaseToLabel("unknown"), "正在处理");
   assert.equal(taskPhaseToLabel(undefined), "正在处理");
+});
+
+test("normalizeTimelineItems preserves tuples and stringifies malformed nodes", () => {
+  assert.deepEqual(normalizeTimelineItems([["签署", "2026-01-01"], "复核中", { phase: "done" }]), [
+    ["签署", "2026-01-01"],
+    ["节点", "复核中"],
+    ["节点", "[object Object]"]
+  ]);
+  assert.deepEqual(normalizeTimelineItems(undefined), []);
 });
