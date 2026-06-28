@@ -1,7 +1,12 @@
 const CONTRACT_SCREENING_BASE = "/api/v1/contract-screening/tasks";
 
 export async function parseResponse(response) {
-  const payload = await response.json();
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    payload = {};
+  }
 
   if (!response.ok || payload.code !== 0) {
     throw new Error(payload.message || `HTTP ${response.status}`);

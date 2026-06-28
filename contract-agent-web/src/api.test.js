@@ -136,6 +136,19 @@ test("parseResponse throws payload message when API code is non-zero", async () 
   );
 });
 
+test("parseResponse falls back to HTTP status when error response body is invalid JSON", async () => {
+  await assert.rejects(
+    parseResponse({
+      ok: false,
+      status: 503,
+      async json() {
+        throw new SyntaxError("Unexpected end of JSON input");
+      }
+    }),
+    /HTTP 503/
+  );
+});
+
 test("createScreeningTask posts JSON body and propagates HTTP errors", async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
