@@ -91,10 +91,12 @@ def test_group_chunks_by_document_uses_document_id():
         {"document_id": "doc-1", "docnm_kwd": "A.pdf", "content": "付款周期90天"},
         {"doc_id": "doc-1", "doc_name": "A.pdf", "content_with_weight": "违约金为每日万分之五"},
         {"document_id": "doc-2", "docnm_kwd": "B.pdf", "content": "付款周期30天"},
+        {"docnm_kwd": "C.pdf", "content": "缺少文档ID"},
     ]
     grouped = group_chunks_by_document(chunks)
     assert sorted(grouped) == ["doc-1", "doc-2"]
     assert len(grouped["doc-1"]) == 2
+    assert all(chunks[3] not in group for group in grouped.values())
 
 
 def test_group_chunks_by_document_supports_object_chunks():
@@ -156,6 +158,25 @@ def test_map_group_to_contract_result_maps_page_num_to_evidence():
     assert result["evidence"][0]["chunk_id"] == "chunk-1"
 
 
+def test_map_group_to_contract_result_maps_position_int_to_evidence():
+    result = map_group_to_contract_result(
+        document_id="doc-1",
+        chunks=[
+            {
+                "chunk_id": "chunk-1",
+                "document_id": "doc-1",
+                "doc_name": "采购合同.pdf",
+                "content_with_weight": "付款期限为验收合格后90日内完成。",
+                "position_int": [[9, 1, 1, 1, 1]],
+                "similarity": 0.8,
+            }
+        ],
+    )
+
+    assert result["evidence"][0]["page"] == 9
+    assert result["evidence"][0]["chunk_id"] == "chunk-1"
+
+
 def test_map_group_to_contract_result_preserves_zero_score():
     result = map_group_to_contract_result(
         document_id="doc-1",
@@ -172,6 +193,25 @@ def test_map_group_to_contract_result_preserves_zero_score():
     assert result["meta"]["score"] == 0
     assert result["meta"]["confidence"] == 0
     assert result["matched_conditions"][0]["score"] == 0
+
+
+def test_map_group_to_contract_result_uses_vector_similarity_for_score():
+    result = map_group_to_contract_result(
+        document_id="doc-1",
+        chunks=[
+            {
+                "id": "chunk-1",
+                "document_id": "doc-1",
+                "docnm_kwd": "采购合同.pdf",
+                "content": "付款期限为验收合格后90日内完成。",
+                "vector_similarity": 0.87,
+            }
+        ],
+    )
+
+    assert result["meta"]["score"] == 87
+    assert result["meta"]["confidence"] == 87
+    assert result["matched_conditions"][0]["score"] == 87
 
 
 def test_map_group_to_contract_result_scores_all_chunks_but_limits_evidence():
