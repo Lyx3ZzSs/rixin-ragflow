@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { contracts } from "./data.js";
-import { buildAuditText, filterContracts, strategyToText } from "./logic.js";
+import {
+  buildAuditText,
+  buildConversationTitle,
+  filterContracts,
+  strategyToText,
+  taskPhaseToLabel
+} from "./logic.js";
 
 test("filterContracts applies all filters and keeps highest-risk matches first", () => {
   const result = filterContracts(contracts, {
@@ -40,8 +46,28 @@ test("buildAuditText includes task, filters, selected contract, and evidence lin
   assert.match(text, /- 合同正文 第 12\.3 条:/);
 });
 
+test("buildAuditText handles contracts without evidence", () => {
+  const text = buildAuditText({
+    query: "筛选合同",
+    filters: { risk: "全部", status: "全部", source: "全部" },
+    item: {
+      id: "CT-1",
+      title: "缺少证据的合同",
+      reason: "命中当前筛选条件。"
+    }
+  });
+
+  assert.match(text, /合同: CT-1 缺少证据的合同/);
+  assert.match(text, /证据:/);
+});
+
+
 test("strategyToText serializes strategy labels for clipboard use", () => {
   assert.match(strategyToText([["字段过滤", "限定采购类合同。"]]), /^字段过滤: 限定采购类合同。$/);
+});
+
+test("strategyToText preserves prototype strategy string arrays", () => {
+  assert.equal(strategyToText(["字段过滤：限定采购类合同。"]), "字段过滤：限定采购类合同。");
 });
 
 test("strategyToText returns empty text for empty strategy", () => {
@@ -77,4 +103,21 @@ test("strategyToText serializes structured backend strategy", () => {
   assert.match(text, /证据策略: .*max_evidence_per_contract=5/);
   assert.doesNotMatch(text, /\[object Object\]/);
   assert.match(text, /每条件证据上限: 20/);
+});
+
+test("buildConversationTitle trims prompts and truncates long titles", () => {
+  assert.equal(buildConversationTitle("  筛选高风险合同  "), "筛选高风险合同");
+  assert.equal(buildConversationTitle(""), "新的筛选任务");
+  assert.equal(buildConversationTitle("  "), "新的筛选任务");
+  assert.equal(buildConversationTitle("一二三四五六七八九十一二三四五六七八九十"), "一二三四五六七八九十一二三四五六七八...");
+});
+
+test("taskPhaseToLabel maps backend task phases to display labels", () => {
+  assert.equal(taskPhaseToLabel("parse_prompt"), "解析筛选意图");
+  assert.equal(taskPhaseToLabel("retrieve_candidates"), "检索候选合同证据");
+  assert.equal(taskPhaseToLabel("review_evidence"), "复核合同证据");
+  assert.equal(taskPhaseToLabel("rank_contracts"), "排序合同结果");
+  assert.equal(taskPhaseToLabel("generate_summary"), "生成筛选结果");
+  assert.equal(taskPhaseToLabel("unknown"), "正在处理");
+  assert.equal(taskPhaseToLabel(undefined), "正在处理");
 });

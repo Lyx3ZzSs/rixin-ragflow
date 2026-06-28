@@ -1,12 +1,22 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createScreeningTask, getScreeningResults, getScreeningTask } from "./api.js";
 import { contracts, promptExamples } from "./data.js";
-import { buildAuditText, filterContracts, statusClass } from "./logic.js";
+import {
+  buildAuditText,
+  buildConversationTitle,
+  filterContracts,
+  statusClass,
+  strategyToText,
+  taskPhaseToLabel
+} from "./logic.js";
 
 const DEFAULT_FILTERS = {
   risk: "全部",
   status: "全部",
   source: "全部"
 };
+
+const TERMINAL_TASK_STATUSES = new Set(["done", "failed", "cancelled"]);
 
 /* ─── SVG icons ──────────────────────────────────────────────────── */
 
@@ -229,6 +239,10 @@ function EvidencePanel({ item, onClose, onQueueOne, onCopyEvidence, toastMessage
     );
   }
 
+  const evidenceItems = Array.isArray(item.evidence) ? item.evidence : [];
+  const actionItems = Array.isArray(item.actions) ? item.actions : [];
+  const timelineItems = Array.isArray(item.timeline) ? item.timeline : [];
+
   return (
     <div className="evidence-panel">
       <div className="evidence-header">
@@ -260,38 +274,56 @@ function EvidencePanel({ item, onClose, onQueueOne, onCopyEvidence, toastMessage
         <div className="detail-section">
           <p className="meta">引用证据</p>
           <ul className="source-list">
-            {item.evidence.map((evidence) => (
-              <li className="source-item" key={`${evidence.source}-${evidence.ref}`}>
+            {evidenceItems.map((evidence, index) => (
+              <li className="source-item" key={`${evidence.source || "证据"}-${evidence.ref || index}`}>
                 <strong>
-                  {evidence.source} · {evidence.ref}
+                  {evidence.source || "合同正文"} · {evidence.ref || "未标注位置"}
                 </strong>
                 <span>{evidence.text}</span>
               </li>
             ))}
+            {evidenceItems.length === 0 && (
+              <li className="source-item">
+                <strong>暂无引用证据</strong>
+                <span>后端未返回证据片段。</span>
+              </li>
+            )}
           </ul>
         </div>
 
         <div className="detail-section">
           <p className="meta">下一步动作</p>
           <ul className="action-list">
-            {item.actions.map((action) => (
+            {actionItems.map((action) => (
               <li className="action-item" key={action}>
                 <strong>{action}</strong>
                 <span>可加入采购/法务待办队列并保留当前筛选依据。</span>
               </li>
             ))}
+            {actionItems.length === 0 && (
+              <li className="action-item">
+                <strong>待人工复核</strong>
+                <span>可加入采购/法务待办队列并保留当前筛选依据。</span>
+              </li>
+            )}
           </ul>
         </div>
 
         <div className="detail-section">
           <p className="meta">关键节点</p>
           <div className="timeline">
-            {item.timeline.map(([label, value]) => (
+            {timelineItems.map(([label, value]) => (
               <div className="timeline-item" key={label}>
                 <span>{label}</span>
                 <strong>{value}</strong>
               </div>
             ))}
+            {timelineItems.length === 0 && (
+              <div className="timeline-item">
+                <span>筛选任务</span>
+                <strong>已完成</strong>
+              </div>
+            )}
           </div>
         </div>
 
@@ -327,6 +359,7 @@ function KeyValue({ label, value }) {
 function ChatView({
   messages,
   isStreaming,
+  displayStreaming,
   streamingPhases,
   onSend,
   onViewEvidence,
@@ -400,7 +433,7 @@ function ChatView({
               onCopyAudit={() => onCopyAudit(msg)}
             />
           ))}
-          {isStreaming && (
+          {displayStreaming && (
             <div className="chat-bubble agent">
               <span className="bubble-label">Agent</span>
               <div className="bubble-content">
@@ -473,6 +506,9 @@ function ChatView({
 }
 
 function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit }) {
+  const strategyLines = strategyToText(message.strategy).split("\n").filter(Boolean);
+  const resultItems = Array.isArray(message.results) ? message.results : [];
+
   return (
     <div className={`chat-bubble ${message.role}`}>
       <span className="bubble-label">
@@ -484,11 +520,11 @@ function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit }) {
         )}
 
         {/* Strategy summary (agent messages) */}
-        {message.strategy && (
+        {strategyLines.length > 0 && (
           <div className="bubble-strategy">
             <p className="strategy-title">检索策略</p>
             <ol style={{ margin: 0, paddingLeft: "16px", fontSize: "var(--text-sm)", color: "var(--fg-2)", display: "grid", gap: "var(--space-1)" }}>
-              {message.strategy.map((s, i) => (
+              {strategyLines.map((s, i) => (
                 <li key={i}>{s}</li>
               ))}
             </ol>
@@ -496,11 +532,14 @@ function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit }) {
         )}
 
         {/* Agent result cards */}
-        {message.results && message.results.length > 0 && (
+        {resultItems.length > 0 && (
           <div className="chat-results-grid">
-            {message.results.map((item) => (
+            {resultItems.map((item, index) => {
+              const evidenceCount = Array.isArray(item.evidence) ? item.evidence.length : 0;
+
+              return (
               <button
-                key={item.id}
+                key={item.id || `${item.title}-${index}`}
                 className={`chat-result-card${viewingItemId === item.id ? " is-viewing" : ""}`}
                 type="button"
                 onClick={() => onViewEvidence(item)}
@@ -530,12 +569,13 @@ function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit }) {
                     </span>
                   ) : (
                     <span className="source-toggle">
-                      <EyeIcon /> 查看 {item.evidence.length} 条证据
+                      <EyeIcon /> 查看 {evidenceCount} 条证据
                     </span>
                   )}
                 </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -668,15 +708,45 @@ function buildInitialConversations() {
   ];
 }
 
+function readSelectedKnowledgeBaseId() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const fromQuery = new URLSearchParams(window.location.search).get("kb_id") || "";
+  const fromStorage = window.localStorage?.getItem("contract-agent-kb-id") || "";
+  const kbId = fromQuery || fromStorage;
+
+  if (fromQuery) {
+    window.localStorage?.setItem("contract-agent-kb-id", fromQuery);
+  }
+
+  return kbId;
+}
+
+function formatConversationTime(date = new Date()) {
+  return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+}
+
+function resolveTaskId(task) {
+  return task?.task_id || task?.id;
+}
+
+function taskFailureMessage(task, fallback = "任务失败") {
+  return task?.message || task?.error || task?.detail || fallback;
+}
+
 export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [evidenceItem, setEvidenceItem] = useState(null);
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingConversationId, setStreamingConversationId] = useState(null);
   const [streamingPhases, setStreamingPhases] = useState([]);
   const [toast, setToast] = useState({ message: "已完成", visible: false });
   const [evidenceToast, setEvidenceToast] = useState("");
+  const [selectedKnowledgeBaseId] = useState(() => readSelectedKnowledgeBaseId());
 
   const [conversations, setConversations] = useState(() => buildInitialConversations());
   const [activeConversationId, setActiveConversationId] = useState("conv-1");
@@ -733,11 +803,10 @@ export default function App() {
   }
 
   function newConversation() {
-    const now = new Date();
     const newConv = {
       id: `conv-${Date.now()}`,
       title: "新的筛选任务",
-      time: now.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
+      time: formatConversationTime(),
       messages: []
     };
     setConversations((prev) => [newConv, ...prev]);
@@ -790,8 +859,9 @@ export default function App() {
   }
 
   function handleCopyAudit(msg) {
-    if (!msg || !msg.results) return;
-    const text = msg.results
+    const resultItems = Array.isArray(msg?.results) ? msg.results : [];
+    if (resultItems.length === 0) return;
+    const text = resultItems
       .map((item) =>
         buildAuditText({
           query: msg.content || "",
@@ -803,87 +873,129 @@ export default function App() {
     copyText(text, "已复制审计包");
   }
 
-  function handleSend(text) {
-    if (isStreaming) return;
-
-    const userMsg = { id: nextMessageId(), role: "user", content: text };
-
+  function appendMessagesToConversation(conversationId, messagesToAppend, { titlePrompt } = {}) {
     setConversations((prev) =>
       prev.map((conv) => {
-        if (conv.id !== activeConversationId) return conv;
+        if (conv.id !== conversationId) return conv;
         return {
           ...conv,
-          title: text.length > 28 ? text.slice(0, 28) + "..." : text,
-          time: new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }),
-          messages: [...conv.messages, userMsg]
+          title: titlePrompt ? buildConversationTitle(titlePrompt) : conv.title,
+          time: formatConversationTime(),
+          messages: [...conv.messages, ...messagesToAppend]
         };
       })
     );
+  }
 
-    // Start multi-phase streaming
-    setIsStreaming(true);
-    setStreamingPhases([]);
+  function updateStreamingPhase(phase) {
+    const key = phase || "processing";
+    const label = taskPhaseToLabel(phase);
 
-    const { filters, results } = smartFilter(text);
-    const strategySteps = buildStrategySteps(text, filters);
+    setStreamingPhases((prev) => {
+      const index = prev.findIndex((item) => item.key === key);
+      if (index >= 0) {
+        return prev.map((item, itemIndex) =>
+          itemIndex < index ? { ...item, done: true } : itemIndex === index ? { ...item, label, done: false } : item
+        );
+      }
 
-    // Phase 1: Parsing intent
-    addPhase("解析筛选意图", 0);
-    // Phase 2: Field filtering
-    addPhase("生成字段过滤条件", 300);
-    // Phase 3: Semantic recall
-    addPhase("执行语义召回", 700);
-    // Phase 4: Evidence review
-    addPhase("复核证据与权限裁剪", 1100);
-    // Phase 5: Complete
-    const completeTime = 1500;
-
-    function addPhase(label, delay) {
-      timers.current.push(
-        window.setTimeout(() => {
-          setStreamingPhases((prev) => [...prev, { key: label, label, done: false }]);
-        }, delay)
-      );
-    }
-
-    // Mark phases as done sequentially
-    const phases = ["解析筛选意图", "生成字段过滤条件", "执行语义召回", "复核证据与权限裁剪"];
-    phases.forEach((label, i) => {
-      timers.current.push(
-        window.setTimeout(() => {
-          setStreamingPhases((prev) =>
-            prev.map((p) => (p.key === label ? { ...p, done: true } : p))
-          );
-        }, 400 + i * 350)
-      );
+      return [
+        ...prev.map((item) => ({ ...item, done: true })),
+        { key, label, done: false }
+      ];
     });
+  }
 
-    // Final result
-    timers.current.push(
-      window.setTimeout(() => {
-        const agentMsg = {
+  function waitForNextPoll() {
+    return new Promise((resolve) => {
+      const timer = window.setTimeout(resolve, 1500);
+      timers.current.push(timer);
+    });
+  }
+
+  async function pollScreeningTask(taskId) {
+    while (true) {
+      const current = await getScreeningTask(taskId);
+      if (current?.phase) {
+        updateStreamingPhase(current.phase);
+      }
+
+      const status = String(current?.status || "").toLowerCase();
+      if (TERMINAL_TASK_STATUSES.has(status)) {
+        return { ...current, status };
+      }
+
+      await waitForNextPoll();
+    }
+  }
+
+  async function handleSend(text) {
+    if (isStreaming || !activeConversationId) return;
+
+    const conversationId = activeConversationId;
+    const userMsg = { id: nextMessageId(), role: "user", content: text };
+
+    appendMessagesToConversation(conversationId, [userMsg], { titlePrompt: text });
+
+    if (!selectedKnowledgeBaseId) {
+      appendMessagesToConversation(conversationId, [
+        {
           id: nextMessageId(),
           role: "agent",
-          content: `检索完成。在 12,486 份合同中命中 ${results.length} 份高优先级合同：`,
-          strategy: strategySteps,
-          results
-        };
+          content: "请在地址栏添加 ?kb_id=<知识库ID> 后再筛选，后续会接入知识库选择器。"
+        }
+      ]);
+      return;
+    }
 
-        setConversations((prev) =>
-          prev.map((conv) => {
-            if (conv.id !== activeConversationId) return conv;
-            return {
-              ...conv,
-              messages: [...conv.messages, agentMsg]
-            };
-          })
-        );
+    setIsStreaming(true);
+    setStreamingConversationId(conversationId);
+    setStreamingPhases([{ key: "parse_prompt", label: taskPhaseToLabel("parse_prompt"), done: false }]);
 
-        setIsStreaming(false);
-        setStreamingPhases([]);
-        showToast(`已筛选 ${results.length} 份合同`);
-      }, completeTime)
-    );
+    try {
+      const createdTask = await createScreeningTask({
+        kbId: selectedKnowledgeBaseId,
+        prompt: text,
+        filters: DEFAULT_FILTERS
+      });
+      const taskId = resolveTaskId(createdTask);
+      if (!taskId) {
+        throw new Error("后端未返回任务 ID");
+      }
+
+      const completedTask = await pollScreeningTask(taskId);
+      if (completedTask.status === "failed" || completedTask.status === "cancelled") {
+        throw new Error(taskFailureMessage(completedTask, completedTask.status === "cancelled" ? "任务已取消" : "任务失败"));
+      }
+
+      setStreamingPhases((prev) => prev.map((phase) => ({ ...phase, done: true })));
+      const result = await getScreeningResults(taskId);
+      const items = Array.isArray(result?.items) ? result.items : [];
+      const agentMsg = {
+        id: nextMessageId(),
+        role: "agent",
+        content: items.length > 0 ? `筛选完成，命中 ${items.length} 份合同。` : "筛选完成，没有命中合同。",
+        strategy: result?.strategy,
+        results: items
+      };
+
+      appendMessagesToConversation(conversationId, [agentMsg]);
+      showToast(`已筛选 ${items.length} 份合同`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || "任务失败");
+      appendMessagesToConversation(conversationId, [
+        {
+          id: nextMessageId(),
+          role: "agent",
+          content: `筛选失败：${message}`
+        }
+      ]);
+      showToast("筛选失败");
+    } finally {
+      setIsStreaming(false);
+      setStreamingConversationId(null);
+      setStreamingPhases([]);
+    }
   }
 
   return (
@@ -912,6 +1024,7 @@ export default function App() {
           <ChatView
             messages={messages}
             isStreaming={isStreaming}
+            displayStreaming={isStreaming && activeConversationId === streamingConversationId}
             streamingPhases={streamingPhases}
             onSend={handleSend}
             onViewEvidence={viewEvidence}

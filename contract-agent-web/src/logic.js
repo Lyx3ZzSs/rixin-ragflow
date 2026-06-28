@@ -8,6 +8,27 @@ export function statusClass(risk) {
   return "status-ok";
 }
 
+export function buildConversationTitle(prompt) {
+  const title = String(prompt || "").trim();
+  if (!title) {
+    return "新的筛选任务";
+  }
+
+  return title.length > 18 ? `${title.slice(0, 18)}...` : title;
+}
+
+export function taskPhaseToLabel(phase) {
+  const labels = {
+    parse_prompt: "解析筛选意图",
+    retrieve_candidates: "检索候选合同证据",
+    review_evidence: "复核合同证据",
+    rank_contracts: "排序合同结果",
+    generate_summary: "生成筛选结果"
+  };
+
+  return labels[phase] || "正在处理";
+}
+
 export function filterContracts(contracts, filters) {
   return contracts
     .filter((item) => filters.risk === "全部" || item.risk === filters.risk)
@@ -17,6 +38,8 @@ export function filterContracts(contracts, filters) {
 }
 
 export function buildAuditText({ query, filters, item }) {
+  const evidenceItems = Array.isArray(item.evidence) ? item.evidence : [];
+
   return [
     "合同智能筛选审计包",
     `任务: ${query.trim()}`,
@@ -24,7 +47,7 @@ export function buildAuditText({ query, filters, item }) {
     `合同: ${item.id} ${item.title}`,
     `命中解释: ${item.reason}`,
     "证据:",
-    ...item.evidence.map((ev) => `- ${ev.source} ${ev.ref}: ${ev.text}`)
+    ...evidenceItems.map((ev) => `- ${ev.source} ${ev.ref}: ${ev.text}`)
   ].join("\n");
 }
 
@@ -34,7 +57,15 @@ export function strategyToText(strategy) {
   }
 
   if (Array.isArray(strategy)) {
-    return strategy.map(([label, text]) => `${label}: ${text}`).join("\n");
+    return strategy
+      .map((item) => {
+        if (Array.isArray(item)) {
+          const [label, text] = item;
+          return `${label}: ${text}`;
+        }
+        return String(item);
+      })
+      .join("\n");
   }
 
   const lines = [];
