@@ -66,11 +66,24 @@ def test_store_roundtrips_task():
     assert loaded["phase"] == "parse_prompt"
 
 
-def test_build_strategy_mentions_prompt_terms():
-    strategy = build_strategy("筛选付款周期超过60天且包含违约金条款的合同")
-    assert strategy[0] == "字段过滤：限定已解析完成的合同文档"
-    assert any("付款周期" in step for step in strategy)
-    assert any("违约金" in step for step in strategy)
+def test_build_strategy_returns_structured_strategy_and_keeps_filters():
+    task = create_initial_task(
+        task_id="task-1",
+        tenant_id="tenant-1",
+        user_id="user-1",
+        kb_id="kb-1",
+        prompt="筛选付款周期超过60天且包含违约金条款的合同",
+        filters={"risk": "高", "status": "全部", "source": "全部"},
+    )
+    strategy = build_strategy(task)
+
+    assert strategy["query"] == task["prompt"]
+    assert strategy["filters"] == task["filters"]
+    assert any("付款周期" in condition["label"] for condition in strategy["conditions"])
+    assert any("违约金" in condition["label"] for condition in strategy["conditions"])
+    assert strategy["evidence_policy"]["group_by"] == "document"
+    assert strategy["evidence_policy"]["max_evidence_per_contract"] == 5
+    assert strategy["limit_per_condition"] > 0
 
 
 def test_group_chunks_by_document_uses_document_id():
@@ -82,6 +95,24 @@ def test_group_chunks_by_document_uses_document_id():
     grouped = group_chunks_by_document(chunks)
     assert sorted(grouped) == ["doc-1", "doc-2"]
     assert len(grouped["doc-1"]) == 2
+
+
+def test_group_chunks_by_document_supports_object_chunks():
+    class Chunk:
+        def __init__(self, doc_id, content):
+            self.doc_id = doc_id
+            self.content = content
+
+    chunks = [
+        Chunk("doc-1", "付款周期90天"),
+        {"document_id": "doc-1", "content": "违约金为每日万分之五"},
+        Chunk("doc-2", "付款周期30天"),
+    ]
+
+    grouped = group_chunks_by_document(chunks)
+
+    assert sorted(grouped) == ["doc-1", "doc-2"]
+    assert grouped["doc-1"][0] is chunks[0]
 
 
 def test_map_group_to_contract_result_returns_contract_first_shape():
@@ -97,12 +128,31 @@ def test_map_group_to_contract_result_returns_contract_first_shape():
                 "score": 0.91,
             }
         ],
-        prompt="筛选付款周期超过60天的合同",
     )
-    assert result["id"] == "doc-1"
-    assert result["title"] == "采购合同.pdf"
-    assert result["score"] == 91
+
+    assert result["contract_id"] == "doc-1"
+    assert result["name"] == "采购合同.pdf"
+    assert result["overall_status"] == "matched"
+    assert result["meta"]["score"] == 91
+    assert result["meta"]["confidence"] == 91
+    assert result["matched_conditions"][0]["status"] == "matched"
+    assert result["matched_conditions"][0]["score"] == 91
     assert result["evidence"][0]["page"] == 12
+    assert result["evidence"][0]["chunk_id"] == "chunk-1"
+
+
+def test_map_group_to_contract_result_maps_page_num_to_evidence():
+    class Chunk:
+        id = "chunk-1"
+        document_id = "doc-1"
+        document_name = "采购合同.pdf"
+        text = "付款期限为验收合格后90日内完成。"
+        page_num = 8
+        similarity = 0.8
+
+    result = map_group_to_contract_result(document_id="doc-1", chunks=[Chunk()])
+
+    assert result["evidence"][0]["page"] == 8
     assert result["evidence"][0]["chunk_id"] == "chunk-1"
 
 
@@ -118,9 +168,10 @@ def test_map_group_to_contract_result_preserves_zero_score():
                 "score": 0,
             }
         ],
-        prompt="筛选付款周期超过60天的合同",
     )
-    assert result["score"] == 0
+    assert result["meta"]["score"] == 0
+    assert result["meta"]["confidence"] == 0
+    assert result["matched_conditions"][0]["score"] == 0
 
 
 def test_map_group_to_contract_result_scores_all_chunks_but_limits_evidence():
@@ -145,10 +196,10 @@ def test_map_group_to_contract_result_scores_all_chunks_but_limits_evidence():
     result = map_group_to_contract_result(
         document_id="doc-1",
         chunks=chunks,
-        prompt="筛选付款周期超过60天的合同",
     )
 
-    assert result["score"] == 98
+    assert result["meta"]["score"] == 98
+    assert result["meta"]["confidence"] == 98
     assert len(result["evidence"]) == 5
     assert [item["chunk_id"] for item in result["evidence"]] == [
         "chunk-1",

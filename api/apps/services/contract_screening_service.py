@@ -126,58 +126,124 @@ def new_task_id() -> str:
     return get_uuid()
 
 
-def build_strategy(prompt: str) -> list[str]:
-    terms = []
+def _field_value(source: Any, *names: str) -> Any:
+    if isinstance(source, dict):
+        for name in names:
+            if name in source and source[name] is not None:
+                return source[name]
+        return None
+
+    for name in names:
+        if hasattr(source, name):
+            value = getattr(source, name)
+            if value is not None:
+                return value
+    return None
+
+
+def build_strategy(task: Any) -> dict[str, Any]:
+    prompt = str(_field_value(task, "prompt", "query") or "").strip()
+    filters = _field_value(task, "filters")
+    if not isinstance(filters, dict):
+        filters = {}
+
+    conditions = []
     if "付款" in prompt or "账期" in prompt:
-        terms.append("付款周期、账期")
+        conditions.append({
+            "id": "payment_terms",
+            "label": "付款周期、账期",
+            "keywords": ["付款", "账期", "付款周期"],
+        })
     if "违约" in prompt or "违约金" in prompt:
-        terms.append("违约金、逾期责任")
+        conditions.append({
+            "id": "penalty_terms",
+            "label": "违约金、逾期责任",
+            "keywords": ["违约", "违约金", "逾期责任"],
+        })
     if "续签" in prompt or "到期" in prompt:
-        terms.append("续签、到期时间")
+        conditions.append({
+            "id": "renewal_terms",
+            "label": "续签、到期时间",
+            "keywords": ["续签", "到期"],
+        })
     if "补充协议" in prompt or "附件" in prompt:
-        terms.append("补充协议、附件完整性")
-    if not terms:
-        terms.append("合同正文、审批和履约相关表达")
-    return [
-        "字段过滤：限定已解析完成的合同文档",
-        f"语义召回：检索{','.join(terms)}相关条款",
-        "证据复核：按合同聚合证据并判断条件是否满足",
-        "综合排序：按命中条件、置信度和风险等级排序",
-    ]
+        conditions.append({
+            "id": "attachment_terms",
+            "label": "补充协议、附件完整性",
+            "keywords": ["补充协议", "附件"],
+        })
+    if not conditions:
+        conditions.append({
+            "id": "contract_terms",
+            "label": "合同正文、审批和履约相关表达",
+            "keywords": ["合同", "审批", "履约"],
+        })
+
+    return {
+        "query": prompt,
+        "conditions": conditions,
+        "filters": dict(filters),
+        "evidence_policy": {
+            "group_by": "document",
+            "text_fields": ["content", "content_with_weight", "text"],
+            "max_evidence_per_contract": 5,
+        },
+        "limit_per_condition": 20,
+    }
 
 
-def _chunk_document_id(chunk: dict[str, Any]) -> str:
-    return str(chunk.get("document_id") or chunk.get("doc_id") or "").strip()
+def _chunk_document_id(chunk: Any) -> str:
+    return str(_field_value(chunk, "document_id", "doc_id") or "").strip()
 
 
-def _chunk_document_name(chunk: dict[str, Any]) -> str:
-    return str(chunk.get("docnm_kwd") or chunk.get("doc_name") or chunk.get("document_name") or "未命名合同")
+def _chunk_document_name(chunk: Any) -> str:
+    return str(_field_value(chunk, "docnm_kwd", "doc_name", "document_name") or "未命名合同")
 
 
-def _chunk_text(chunk: dict[str, Any]) -> str:
-    return str(chunk.get("content") or chunk.get("content_with_weight") or chunk.get("text") or "").strip()
+def _chunk_text(chunk: Any) -> str:
+    return str(_field_value(chunk, "content", "content_with_weight", "text") or "").strip()
 
 
-def _chunk_page(chunk: dict[str, Any]) -> int | None:
-    positions = chunk.get("positions") or chunk.get("position_int") or []
+def _chunk_identifier(chunk: Any) -> str:
+    return str(_field_value(chunk, "id", "chunk_id") or "")
+
+
+def _chunk_page(chunk: Any) -> int | None:
+    positions = _field_value(chunk, "positions") or _field_value(chunk, "position_int") or []
+    if isinstance(positions, (int, float, str)):
+        try:
+            return int(positions)
+        except Exception:
+            return None
     if positions and isinstance(positions[0], list) and positions[0]:
         try:
             return int(positions[0][0])
         except Exception:
             return None
+    if positions:
+        try:
+            return int(positions[0])
+        except Exception:
+            return None
+    page_num = _field_value(chunk, "page_num")
+    if page_num is not None:
+        try:
+            return int(page_num)
+        except Exception:
+            return None
     return None
 
 
-def _chunk_score(chunk: dict[str, Any]) -> float | None:
+def _chunk_score(chunk: Any) -> float | None:
     for key in ("score", "similarity", "vector_similarity"):
-        score = chunk.get(key)
+        score = _field_value(chunk, key)
         if isinstance(score, (int, float)):
             return float(score)
     return None
 
 
-def group_chunks_by_document(chunks: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    grouped: dict[str, list[dict[str, Any]]] = {}
+def group_chunks_by_document(chunks: list[Any]) -> dict[str, list[Any]]:
+    grouped: dict[str, list[Any]] = {}
     for chunk in chunks:
         document_id = _chunk_document_id(chunk)
         if not document_id:
@@ -186,7 +252,7 @@ def group_chunks_by_document(chunks: list[dict[str, Any]]) -> dict[str, list[dic
     return grouped
 
 
-def map_group_to_contract_result(document_id: str, chunks: list[dict[str, Any]], prompt: str) -> dict[str, Any]:
+def map_group_to_contract_result(document_id: str, chunks: list[Any]) -> dict[str, Any]:
     first = chunks[0] if chunks else {}
     evidence = []
     scores = [_score for chunk in chunks if (_score := _chunk_score(chunk)) is not None]
@@ -197,7 +263,7 @@ def map_group_to_contract_result(document_id: str, chunks: list[dict[str, Any]],
         if not text:
             continue
         page = _chunk_page(chunk)
-        chunk_id = str(chunk.get("id") or chunk.get("chunk_id") or "")
+        chunk_id = _chunk_identifier(chunk)
         evidence.append({
             "source": "合同正文",
             "ref": f"第{page}页 / {chunk_id}" if page else chunk_id,
@@ -207,19 +273,29 @@ def map_group_to_contract_result(document_id: str, chunks: list[dict[str, Any]],
         })
     confidence = int(round((max(scores) if scores else 0.75) * 100))
     confidence = max(0, min(confidence, 100))
+    overall_status = "matched" if evidence else "unmatched"
     return {
-        "id": document_id,
-        "title": _chunk_document_name(first),
-        "supplier": "待抽取",
-        "owner": "当前知识库",
-        "status": "命中",
-        "risk": "中",
-        "amount": "待抽取",
-        "expiry": "待抽取",
-        "score": confidence,
-        "permissions": "按 RAGFlow 知识库权限可见",
-        "reason": f"该合同包含与“{prompt}”相关的可追溯证据。",
+        "contract_id": document_id,
+        "name": _chunk_document_name(first),
+        "meta": {
+            "supplier": "待抽取",
+            "owner": "当前知识库",
+            "risk": "中",
+            "amount": "待抽取",
+            "expiry": "待抽取",
+            "permissions": "按 RAGFlow 知识库权限可见",
+            "score": confidence,
+            "confidence": confidence,
+            "evidence_count": len(evidence),
+        },
+        "overall_status": overall_status,
+        "matched_conditions": [{
+            "condition_id": "semantic_match",
+            "label": "合同正文证据匹配",
+            "status": overall_status,
+            "score": confidence,
+            "confidence": confidence,
+            "evidence_count": len(evidence),
+        }],
         "evidence": evidence,
-        "actions": ["复核右侧证据并确认是否加入待办"],
-        "timeline": [],
     }
