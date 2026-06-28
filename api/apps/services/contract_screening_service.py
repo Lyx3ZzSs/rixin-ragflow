@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import inspect
 import json
 import time
 from dataclasses import asdict, dataclass, field
@@ -299,3 +300,119 @@ def map_group_to_contract_result(document_id: str, chunks: list[Any]) -> dict[st
         }],
         "evidence": evidence,
     }
+
+
+def _build_search_request(task: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "dataset_ids": [task["kb_id"]],
+        "question": task["prompt"],
+        "top_k": 64,
+        "size": 64,
+        "page": 1,
+        "similarity_threshold": 0.0,
+        "vector_similarity_weight": 0.3,
+        "use_kg": False,
+    }
+
+
+async def _call_search_service(
+    search_service: Any,
+    tenant_id: str,
+    task: dict[str, Any],
+    req: dict[str, Any],
+) -> Any:
+    if search_service is None:
+        from api.apps.services import dataset_api_service
+
+        search_service = dataset_api_service
+
+    if hasattr(search_service, "search_datasets"):
+        result = search_service.search_datasets(tenant_id, req)
+    else:
+        result = search_service.search(task["kb_id"], tenant_id, req)
+
+    if inspect.isawaitable(result):
+        return await result
+    return result
+
+
+def _normalize_search_result(result: Any) -> dict[str, Any]:
+    if isinstance(result, tuple):
+        success = bool(result[0]) if result else False
+        if not success:
+            raise ContractScreeningError(str(result))
+        payload = result[1] if len(result) > 1 else {}
+        return payload if isinstance(payload, dict) else {}
+
+    if isinstance(result, dict):
+        if result.get("success") is False:
+            raise ContractScreeningError(str(result))
+        return result
+
+    raise ContractScreeningError(str(result))
+
+
+async def run_screening_task(
+    tenant_id: str,
+    task_id: str,
+    store: ContractScreeningStore | None = None,
+    search_service: Any = None,
+) -> dict[str, Any]:
+    store = store or ContractScreeningStore()
+    task = store.get(tenant_id, task_id)
+    if not task:
+        raise ContractScreeningError("Task not found")
+
+    try:
+        strategy = build_strategy(task)
+        task.update({
+            "status": "running",
+            "phase": "retrieve_candidates",
+            "progress": 0.25,
+            "message": "正在检索候选合同",
+            "strategy": strategy,
+            "error": "",
+        })
+        store.save(task)
+
+        req = _build_search_request(task)
+        result = await _call_search_service(search_service, tenant_id, task, req)
+        result = _normalize_search_result(result)
+
+        task.update({
+            "phase": "review_evidence",
+            "progress": 0.68,
+            "message": "正在复核合同证据",
+        })
+        store.save(task)
+
+        grouped = group_chunks_by_document(result.get("chunks", []))
+        items = [
+            map_group_to_contract_result(document_id, chunks)
+            for document_id, chunks in grouped.items()
+        ]
+        items.sort(key=lambda item: item.get("meta", {}).get("score", 0), reverse=True)
+
+        task.update({
+            "status": "done",
+            "phase": "generate_summary",
+            "progress": 1.0,
+            "message": "筛选完成",
+            "items": items,
+            "skipped": {"unparsed": 0},
+            "error": "",
+        })
+        store.save(task)
+        return task
+    except Exception as exc:
+        message = exc.message if isinstance(exc, ContractScreeningError) else str(exc)
+        task.update({
+            "status": "failed",
+            "progress": 1.0,
+            "message": message,
+            "error": message,
+        })
+        store.save(task)
+        if isinstance(exc, ContractScreeningError):
+            raise
+        raise ContractScreeningError(message) from exc

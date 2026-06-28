@@ -1,4 +1,5 @@
 import json
+import asyncio
 
 import pytest
 
@@ -9,6 +10,7 @@ from api.apps.services.contract_screening_service import (
     create_initial_task,
     group_chunks_by_document,
     map_group_to_contract_result,
+    run_screening_task,
     validate_create_task_request,
 )
 
@@ -23,6 +25,39 @@ class FakeRedis:
 
     def get(self, key):
         return self.values.get(key)
+
+
+def _new_saved_task(store, prompt="筛选付款周期超过60天且包含违约金条款的合同"):
+    task = create_initial_task(
+        task_id="task-1",
+        tenant_id="tenant-1",
+        user_id="user-1",
+        kb_id="kb-1",
+        prompt=prompt,
+        filters={"risk": "全部", "status": "全部", "source": "全部"},
+    )
+    store.save(task)
+    return task
+
+
+class SearchDatasetsStub:
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    async def search_datasets(self, tenant_id, req):
+        self.calls.append({"tenant_id": tenant_id, "req": req})
+        return self.result
+
+
+class SearchStub:
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    async def search(self, dataset_id, tenant_id, req):
+        self.calls.append({"dataset_id": dataset_id, "tenant_id": tenant_id, "req": req})
+        return self.result
 
 
 def test_validate_create_task_request_requires_kb_id():
@@ -64,6 +99,101 @@ def test_store_roundtrips_task():
     assert loaded["task_id"] == "task-1"
     assert loaded["status"] == "pending"
     assert loaded["phase"] == "parse_prompt"
+
+
+def test_run_screening_task_retrieves_and_sorts_contract_results():
+    store = ContractScreeningStore(redis=FakeRedis(), ttl_seconds=60)
+    _new_saved_task(store)
+    search = SearchDatasetsStub({
+        "chunks": [
+            {
+                "id": "chunk-low",
+                "document_id": "doc-low",
+                "docnm_kwd": "服务合同.pdf",
+                "content": "付款周期为30天。",
+                "score": 0.61,
+            },
+            {
+                "id": "chunk-high",
+                "document_id": "doc-high",
+                "docnm_kwd": "采购合同.pdf",
+                "content": "付款期限为验收合格后90日内完成，逾期承担违约金。",
+                "positions": [[3, 1, 1, 1, 1]],
+                "score": 0.93,
+            },
+        ]
+    })
+
+    task = asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=search))
+
+    assert search.calls == [{
+        "tenant_id": "tenant-1",
+        "req": {
+            "dataset_ids": ["kb-1"],
+            "question": "筛选付款周期超过60天且包含违约金条款的合同",
+            "top_k": 64,
+            "size": 64,
+            "page": 1,
+            "similarity_threshold": 0.0,
+            "vector_similarity_weight": 0.3,
+            "use_kg": False,
+        },
+    }]
+    assert task["status"] == "done"
+    assert task["phase"] == "generate_summary"
+    assert task["progress"] == 1.0
+    assert task["message"] == "筛选完成"
+    assert task["strategy"]["query"] == task["prompt"]
+    assert task["strategy"]["evidence_policy"]["group_by"] == "document"
+    assert task["items"][0]["name"] == "采购合同.pdf"
+    assert task["items"][0]["contract_id"] == "doc-high"
+    assert [item["meta"]["score"] for item in task["items"]] == [93, 61]
+    assert task["skipped"]["unparsed"] == 0
+    assert task["error"] == ""
+
+    saved = store.get("tenant-1", "task-1")
+    assert saved["status"] == "done"
+    assert saved["items"][0]["contract_id"] == "doc-high"
+
+
+def test_run_screening_task_marks_task_failed_when_search_fails():
+    store = ContractScreeningStore(redis=FakeRedis(), ttl_seconds=60)
+    _new_saved_task(store)
+    search = SearchDatasetsStub((False, "retrieval unavailable"))
+
+    with pytest.raises(ContractScreeningError) as exc:
+        asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=search))
+
+    assert "retrieval unavailable" in exc.value.message
+    saved = store.get("tenant-1", "task-1")
+    assert saved["status"] == "failed"
+    assert saved["progress"] == 1.0
+    assert "retrieval unavailable" in saved["message"]
+    assert "retrieval unavailable" in saved["error"]
+
+
+def test_run_screening_task_uses_search_method_when_search_datasets_missing():
+    store = ContractScreeningStore(redis=FakeRedis(), ttl_seconds=60)
+    _new_saved_task(store, prompt="筛选续签合同")
+    search = SearchStub((True, {
+        "chunks": [
+            {
+                "chunk_id": "chunk-1",
+                "doc_id": "doc-1",
+                "doc_name": "续签合同.pdf",
+                "content_with_weight": "合同到期后自动续签一年。",
+                "similarity": 0.82,
+            }
+        ]
+    }))
+
+    task = asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=search))
+
+    assert search.calls[0]["dataset_id"] == "kb-1"
+    assert search.calls[0]["tenant_id"] == "tenant-1"
+    assert search.calls[0]["req"]["dataset_ids"] == ["kb-1"]
+    assert task["status"] == "done"
+    assert task["items"][0]["contract_id"] == "doc-1"
 
 
 def test_build_strategy_returns_structured_strategy_and_keeps_filters():
