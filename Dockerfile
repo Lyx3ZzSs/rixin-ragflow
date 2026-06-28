@@ -182,6 +182,14 @@ RUN version_info=$(git describe --tags --match=v* --first-parent --always); \
     echo "RAGFlow version: $version_info"; \
     echo $version_info > /ragflow/VERSION
 
+# contract-agent web builder stage
+FROM node:22 AS contract-agent-web-builder
+WORKDIR /ragflow/contract-agent-web
+COPY contract-agent-web/package*.json ./
+RUN npm ci
+COPY contract-agent-web/ ./
+RUN npm run build
+
 # production stage
 FROM base AS production
 USER root
@@ -221,6 +229,7 @@ RUN mv /etc/nginx/ragflow.conf.golang /etc/nginx/conf.d/ragflow.conf.golang && \
 
 # Copy compiled web pages
 COPY --from=builder /ragflow/web/dist /ragflow/web/dist
+COPY --from=contract-agent-web-builder /ragflow/contract-agent-web/dist /ragflow/contract-agent-web/dist
 
 COPY --from=builder /ragflow/VERSION /ragflow/VERSION
 ENTRYPOINT ["./entrypoint.sh"]

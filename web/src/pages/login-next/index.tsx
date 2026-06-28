@@ -8,6 +8,7 @@ import {
 } from '@/hooks/use-login-request';
 import { useSystemConfig } from '@/hooks/use-system-request';
 import { rsaPsw } from '@/utils';
+import { redirectToDefaultRoute } from '@/utils/contract-agent-config';
 import { useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
@@ -265,7 +266,7 @@ const Login = () => {
   const { isLogin } = useAuth();
   useEffect(() => {
     if (isLogin) {
-      navigate('/');
+      redirectToDefaultRoute(navigate);
     }
   }, [isLogin, navigate]);
 
@@ -324,7 +325,7 @@ const Login = () => {
           password: rsaPassWord,
         });
         if (code === 0) {
-          navigate('/');
+          redirectToDefaultRoute(navigate);
         }
       } else {
         const code = await register({
