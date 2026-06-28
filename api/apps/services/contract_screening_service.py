@@ -46,7 +46,7 @@ class ContractScreeningTask:
     phase: str = "parse_prompt"
     progress: float = 0.0
     message: str = "等待开始筛选"
-    strategy: list[str] = field(default_factory=list)
+    strategy: dict[str, Any] = field(default_factory=dict)
     items: list[dict[str, Any]] = field(default_factory=list)
     skipped: dict[str, int] = field(default_factory=dict)
     error: str = ""
