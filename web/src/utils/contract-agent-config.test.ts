@@ -16,6 +16,18 @@ describe('contract agent config', () => {
     expect(getContractAgentDefaultRoute(env)).toBe('/');
   });
 
+  it('is disabled when the feature flag is not exactly true', () => {
+    expect(
+      isContractAgentEnabled({ VITE_CONTRACT_AGENT_ENABLED: 'TRUE' }),
+    ).toBe(false);
+    expect(
+      isContractAgentEnabled({ VITE_CONTRACT_AGENT_ENABLED: 'True' }),
+    ).toBe(false);
+    expect(
+      isContractAgentEnabled({ VITE_CONTRACT_AGENT_ENABLED: ' true ' }),
+    ).toBe(false);
+  });
+
   it('is enabled when the feature flag is true', () => {
     expect(
       isContractAgentEnabled({ VITE_CONTRACT_AGENT_ENABLED: 'true' }),

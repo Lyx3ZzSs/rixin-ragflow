@@ -3,7 +3,8 @@ export type EnvLike = Record<string, string | boolean | undefined>;
 export function isContractAgentEnabled(
   env: EnvLike = import.meta.env,
 ): boolean {
-  return String(env.VITE_CONTRACT_AGENT_ENABLED).toLowerCase() === 'true';
+  const value = env.VITE_CONTRACT_AGENT_ENABLED;
+  return value === true || value === 'true';
 }
 
 export function getContractAgentDefaultRoute(
