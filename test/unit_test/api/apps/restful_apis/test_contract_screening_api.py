@@ -209,6 +209,7 @@ def test_create_task_returns_data_error_when_dataset_inaccessible(monkeypatch):
 def test_create_task_returns_internal_error_when_store_save_fails(monkeypatch):
     module = _load_api(monkeypatch)
     logged = []
+    started = []
 
     class FailingStore:
         def save(self, _task):
@@ -221,11 +222,38 @@ def test_create_task_returns_internal_error_when_store_save_fails(monkeypatch):
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda kb_id, user_id: True)
     monkeypatch.setattr(module, "ContractScreeningStore", FailingStore)
     monkeypatch.setattr(module.logging, "exception", lambda message: logged.append(message))
+    monkeypatch.setattr(module, "_start_background_task", lambda tenant_id, task_id: started.append((tenant_id, task_id)))
 
     result = _run(module.create_task(tenant_id="tenant-1"))
 
     assert result == {"code": 102, "message": "Internal server error"}
     assert logged == ["failed to create contract screening task"]
+    assert started == []
+
+
+def test_create_task_returns_internal_error_when_store_save_returns_false(monkeypatch):
+    module = _load_api(monkeypatch)
+    logged = []
+    started = []
+
+    class FailingStore:
+        def save(self, _task):
+            return False
+
+    async def fake_request_json():
+        return {"kb_id": "kb-1", "prompt": "筛选合同"}
+
+    monkeypatch.setattr(module, "get_request_json", fake_request_json)
+    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda kb_id, user_id: True)
+    monkeypatch.setattr(module, "ContractScreeningStore", FailingStore)
+    monkeypatch.setattr(module.logging, "exception", lambda message: logged.append(message))
+    monkeypatch.setattr(module, "_start_background_task", lambda tenant_id, task_id: started.append((tenant_id, task_id)))
+
+    result = _run(module.create_task(tenant_id="tenant-1"))
+
+    assert result == {"code": 102, "message": "Internal server error"}
+    assert logged == ["failed to create contract screening task"]
+    assert started == []
 
 
 def test_create_task_returns_internal_error_when_background_start_fails(monkeypatch):
@@ -274,6 +302,48 @@ def test_start_background_task_uses_asyncio_create_task_in_running_loop(monkeypa
         assert calls == [("tenant-1", "task-1")]
 
     _run(exercise())
+
+
+def test_start_background_task_keeps_reference_until_task_done(monkeypatch):
+    module = _load_api(monkeypatch)
+    gate = asyncio.Event()
+
+    async def fake_run_screening_task(_tenant_id, _task_id):
+        await gate.wait()
+        return {"status": "done"}
+
+    async def exercise():
+        module._background_tasks.clear()
+        monkeypatch.setattr(module, "run_screening_task", fake_run_screening_task)
+
+        task = module._start_background_task("tenant-1", "task-1")
+
+        assert task in module._background_tasks
+        gate.set()
+        assert await task == {"status": "done"}
+        await asyncio.sleep(0)
+        assert task not in module._background_tasks
+
+    _run(exercise())
+
+
+def test_start_background_task_fallback_runs_without_running_loop(monkeypatch):
+    module = _load_api(monkeypatch)
+    calls = []
+
+    async def fake_run_screening_task(tenant_id, task_id):
+        calls.append((tenant_id, task_id))
+        return {"status": "done"}
+
+    monkeypatch.setattr(module, "run_screening_task", fake_run_screening_task)
+    module._background_tasks.clear()
+
+    task = module._start_background_task("tenant-1", "task-1")
+
+    assert calls == [("tenant-1", "task-1")]
+    assert task.done()
+    assert task.result() == {"status": "done"}
+    assert module._background_tasks == set()
 
 
 def test_get_task_returns_progress_fields(monkeypatch):

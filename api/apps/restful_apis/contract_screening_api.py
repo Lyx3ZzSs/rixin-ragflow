@@ -36,6 +36,9 @@ from api.utils.api_utils import (
 )
 
 
+_background_tasks: set[asyncio.Task] = set()
+
+
 @manager.route("/contract-screening/tasks", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -54,7 +57,8 @@ async def create_task(tenant_id: str):
             prompt=payload["prompt"],
             filters=payload["filters"],
         )
-        ContractScreeningStore().save(task)
+        if not ContractScreeningStore().save(task):
+            raise RuntimeError("Failed to persist contract screening task")
         _start_background_task(tenant_id, task_id)
         return get_result(data={"task_id": task_id})
     except ContractScreeningError as exc:
@@ -112,7 +116,7 @@ async def get_results(task_id: str, tenant_id: str):
     })
 
 
-def _start_background_task(tenant_id: str, task_id: str) -> asyncio.Task:
+def _start_background_task(tenant_id: str, task_id: str) -> asyncio.Future:
     coro = run_screening_task(tenant_id, task_id)
     try:
         task = asyncio.create_task(coro)
@@ -122,8 +126,16 @@ def _start_background_task(tenant_id: str, task_id: str) -> asyncio.Task:
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-        task = loop.create_task(coro)
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(coro)
+        future = loop.create_future()
+        future.set_result(result)
+        return future
 
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     task.add_done_callback(_log_background_task_exception)
     return task
 
