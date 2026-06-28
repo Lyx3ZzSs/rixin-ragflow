@@ -60,6 +60,12 @@ server {
         include proxy.conf;
     }
 
+    location /contract-agent/ {
+        alias /ragflow/contract-agent-web/dist/;
+        index index.html;
+        try_files $uri $uri/ /contract-agent/index.html;
+    }
+
     location / {
         index index.html;
         try_files $uri $uri/ /index.html;
