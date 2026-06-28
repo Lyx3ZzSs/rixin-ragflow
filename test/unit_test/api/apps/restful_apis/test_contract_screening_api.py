@@ -206,6 +206,76 @@ def test_create_task_returns_data_error_when_dataset_inaccessible(monkeypatch):
     assert "You don't own the dataset" in result["message"]
 
 
+def test_create_task_returns_internal_error_when_store_save_fails(monkeypatch):
+    module = _load_api(monkeypatch)
+    logged = []
+
+    class FailingStore:
+        def save(self, _task):
+            raise RuntimeError("redis unavailable")
+
+    async def fake_request_json():
+        return {"kb_id": "kb-1", "prompt": "筛选合同"}
+
+    monkeypatch.setattr(module, "get_request_json", fake_request_json)
+    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda kb_id, user_id: True)
+    monkeypatch.setattr(module, "ContractScreeningStore", FailingStore)
+    monkeypatch.setattr(module.logging, "exception", lambda message: logged.append(message))
+
+    result = _run(module.create_task(tenant_id="tenant-1"))
+
+    assert result == {"code": 102, "message": "Internal server error"}
+    assert logged == ["failed to create contract screening task"]
+
+
+def test_create_task_returns_internal_error_when_background_start_fails(monkeypatch):
+    module = _load_api(monkeypatch)
+    logged = []
+
+    async def fake_request_json():
+        return {"kb_id": "kb-1", "prompt": "筛选合同"}
+
+    monkeypatch.setattr(module, "get_request_json", fake_request_json)
+    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda kb_id, user_id: True)
+    monkeypatch.setattr(module, "_start_background_task", lambda tenant_id, task_id: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(module.logging, "exception", lambda message: logged.append(message))
+
+    result = _run(module.create_task(tenant_id="tenant-1"))
+
+    assert result == {"code": 102, "message": "Internal server error"}
+    assert logged == ["failed to create contract screening task"]
+
+
+def test_start_background_task_uses_asyncio_create_task_in_running_loop(monkeypatch):
+    module = _load_api(monkeypatch)
+    calls = []
+    create_task_calls = []
+    original_create_task = module.asyncio.create_task
+
+    async def fake_run_screening_task(tenant_id, task_id):
+        await asyncio.sleep(0)
+        calls.append((tenant_id, task_id))
+        return {"status": "done"}
+
+    def tracking_create_task(coro):
+        create_task_calls.append(coro)
+        return original_create_task(coro)
+
+    async def exercise():
+        monkeypatch.setattr(module, "run_screening_task", fake_run_screening_task)
+        monkeypatch.setattr(module.asyncio, "create_task", tracking_create_task)
+
+        task = module._start_background_task("tenant-1", "task-1")
+
+        assert create_task_calls
+        assert isinstance(task, asyncio.Task)
+        assert calls == []
+        assert await task == {"status": "done"}
+        assert calls == [("tenant-1", "task-1")]
+
+    _run(exercise())
+
+
 def test_get_task_returns_progress_fields(monkeypatch):
     module = _load_api(monkeypatch)
     store = FakeStore({

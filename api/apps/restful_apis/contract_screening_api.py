@@ -42,24 +42,26 @@ from api.utils.api_utils import (
 async def create_task(tenant_id: str):
     try:
         payload = validate_create_task_request(await get_request_json())
+        if not KnowledgebaseService.accessible(kb_id=payload["kb_id"], user_id=tenant_id):
+            return get_error_data_result(message="You don't own the dataset.")
+
+        task_id = new_task_id()
+        task = create_initial_task(
+            task_id=task_id,
+            tenant_id=tenant_id,
+            user_id=current_user.id,
+            kb_id=payload["kb_id"],
+            prompt=payload["prompt"],
+            filters=payload["filters"],
+        )
+        ContractScreeningStore().save(task)
+        _start_background_task(tenant_id, task_id)
+        return get_result(data={"task_id": task_id})
     except ContractScreeningError as exc:
         return get_error_argument_result(exc.message)
-
-    if not KnowledgebaseService.accessible(kb_id=payload["kb_id"], user_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
-
-    task_id = new_task_id()
-    task = create_initial_task(
-        task_id=task_id,
-        tenant_id=tenant_id,
-        user_id=current_user.id,
-        kb_id=payload["kb_id"],
-        prompt=payload["prompt"],
-        filters=payload["filters"],
-    )
-    ContractScreeningStore().save(task)
-    _start_background_task(tenant_id, task_id)
-    return get_result(data={"task_id": task_id})
+    except Exception:
+        logging.exception("failed to create contract screening task")
+        return get_error_data_result(message="Internal server error")
 
 
 @manager.route("/contract-screening/tasks/<task_id>", methods=["GET"])  # noqa: F821
@@ -111,16 +113,17 @@ async def get_results(task_id: str, tenant_id: str):
 
 
 def _start_background_task(tenant_id: str, task_id: str) -> asyncio.Task:
+    coro = run_screening_task(tenant_id, task_id)
     try:
-        loop = asyncio.get_running_loop()
+        task = asyncio.create_task(coro)
     except RuntimeError:
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+        task = loop.create_task(coro)
 
-    task = loop.create_task(run_screening_task(tenant_id, task_id))
     task.add_done_callback(_log_background_task_exception)
     return task
 
