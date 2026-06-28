@@ -5,7 +5,10 @@ import pytest
 from api.apps.services.contract_screening_service import (
     ContractScreeningError,
     ContractScreeningStore,
+    build_strategy,
     create_initial_task,
+    group_chunks_by_document,
+    map_group_to_contract_result,
     validate_create_task_request,
 )
 
@@ -61,3 +64,43 @@ def test_store_roundtrips_task():
     assert loaded["task_id"] == "task-1"
     assert loaded["status"] == "pending"
     assert loaded["phase"] == "parse_prompt"
+
+
+def test_build_strategy_mentions_prompt_terms():
+    strategy = build_strategy("筛选付款周期超过60天且包含违约金条款的合同")
+    assert strategy[0] == "字段过滤：限定已解析完成的合同文档"
+    assert any("付款周期" in step for step in strategy)
+    assert any("违约金" in step for step in strategy)
+
+
+def test_group_chunks_by_document_uses_document_id():
+    chunks = [
+        {"document_id": "doc-1", "docnm_kwd": "A.pdf", "content": "付款周期90天"},
+        {"doc_id": "doc-1", "doc_name": "A.pdf", "content_with_weight": "违约金为每日万分之五"},
+        {"document_id": "doc-2", "docnm_kwd": "B.pdf", "content": "付款周期30天"},
+    ]
+    grouped = group_chunks_by_document(chunks)
+    assert sorted(grouped) == ["doc-1", "doc-2"]
+    assert len(grouped["doc-1"]) == 2
+
+
+def test_map_group_to_contract_result_returns_contract_first_shape():
+    result = map_group_to_contract_result(
+        document_id="doc-1",
+        chunks=[
+            {
+                "id": "chunk-1",
+                "document_id": "doc-1",
+                "docnm_kwd": "采购合同.pdf",
+                "content": "付款期限为验收合格后90日内完成。",
+                "positions": [[12, 1, 1, 1, 1]],
+                "score": 0.91,
+            }
+        ],
+        prompt="筛选付款周期超过60天的合同",
+    )
+    assert result["id"] == "doc-1"
+    assert result["title"] == "采购合同.pdf"
+    assert result["score"] == 91
+    assert result["evidence"][0]["page"] == 12
+    assert result["evidence"][0]["chunk_id"] == "chunk-1"
