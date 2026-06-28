@@ -104,3 +104,56 @@ def test_map_group_to_contract_result_returns_contract_first_shape():
     assert result["score"] == 91
     assert result["evidence"][0]["page"] == 12
     assert result["evidence"][0]["chunk_id"] == "chunk-1"
+
+
+def test_map_group_to_contract_result_preserves_zero_score():
+    result = map_group_to_contract_result(
+        document_id="doc-1",
+        chunks=[
+            {
+                "id": "chunk-1",
+                "document_id": "doc-1",
+                "docnm_kwd": "采购合同.pdf",
+                "content": "付款期限未命中。",
+                "score": 0,
+            }
+        ],
+        prompt="筛选付款周期超过60天的合同",
+    )
+    assert result["score"] == 0
+
+
+def test_map_group_to_contract_result_scores_all_chunks_but_limits_evidence():
+    chunks = [
+        {
+            "id": f"chunk-{index}",
+            "document_id": "doc-1",
+            "docnm_kwd": "采购合同.pdf",
+            "content": f"第{index}条证据",
+            "score": 0.2,
+        }
+        for index in range(1, 6)
+    ]
+    chunks.append({
+        "id": "chunk-6",
+        "document_id": "doc-1",
+        "docnm_kwd": "采购合同.pdf",
+        "content": "",
+        "score": 0.98,
+    })
+
+    result = map_group_to_contract_result(
+        document_id="doc-1",
+        chunks=chunks,
+        prompt="筛选付款周期超过60天的合同",
+    )
+
+    assert result["score"] == 98
+    assert len(result["evidence"]) == 5
+    assert [item["chunk_id"] for item in result["evidence"]] == [
+        "chunk-1",
+        "chunk-2",
+        "chunk-3",
+        "chunk-4",
+        "chunk-5",
+    ]

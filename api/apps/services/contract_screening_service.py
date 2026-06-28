@@ -168,6 +168,14 @@ def _chunk_page(chunk: dict[str, Any]) -> int | None:
     return None
 
 
+def _chunk_score(chunk: dict[str, Any]) -> float | None:
+    for key in ("score", "similarity", "vector_similarity"):
+        score = chunk.get(key)
+        if isinstance(score, (int, float)):
+            return float(score)
+    return None
+
+
 def group_chunks_by_document(chunks: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for chunk in chunks:
@@ -181,14 +189,13 @@ def group_chunks_by_document(chunks: list[dict[str, Any]]) -> dict[str, list[dic
 def map_group_to_contract_result(document_id: str, chunks: list[dict[str, Any]], prompt: str) -> dict[str, Any]:
     first = chunks[0] if chunks else {}
     evidence = []
-    scores = []
-    for chunk in chunks[:5]:
+    scores = [_score for chunk in chunks if (_score := _chunk_score(chunk)) is not None]
+    for chunk in chunks:
+        if len(evidence) >= 5:
+            break
         text = _chunk_text(chunk)
         if not text:
             continue
-        score = chunk.get("score") or chunk.get("similarity") or chunk.get("vector_similarity")
-        if isinstance(score, (int, float)):
-            scores.append(float(score))
         page = _chunk_page(chunk)
         chunk_id = str(chunk.get("id") or chunk.get("chunk_id") or "")
         evidence.append({
