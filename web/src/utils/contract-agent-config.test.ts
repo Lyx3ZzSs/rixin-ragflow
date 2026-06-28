@@ -5,6 +5,8 @@ import {
 
 describe('contract agent config', () => {
   it('is disabled by default', () => {
+    expect(() => isContractAgentEnabled()).not.toThrow();
+    expect(() => getContractAgentDefaultRoute()).not.toThrow();
     expect(isContractAgentEnabled()).toBe(false);
     expect(getContractAgentDefaultRoute()).toBe('/');
   });
