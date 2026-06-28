@@ -29,5 +29,41 @@ export function buildAuditText({ query, filters, item }) {
 }
 
 export function strategyToText(strategy) {
-  return strategy.map(([label, text]) => `${label}: ${text}`).join("\n");
+  if (!strategy) {
+    return "";
+  }
+
+  if (Array.isArray(strategy)) {
+    return strategy.map(([label, text]) => `${label}: ${text}`).join("\n");
+  }
+
+  const lines = [];
+  if (strategy.query) {
+    lines.push(`查询: ${strategy.query}`);
+  }
+  if (Array.isArray(strategy.conditions) && strategy.conditions.length > 0) {
+    lines.push(`条件: ${strategy.conditions.map(conditionToText).filter(Boolean).join("; ")}`);
+  }
+  if (strategy.filters && Object.keys(strategy.filters).length > 0) {
+    lines.push(`过滤: ${Object.entries(strategy.filters).map(([key, value]) => `${key}=${value}`).join("; ")}`);
+  }
+  if (strategy.evidence_policy) {
+    lines.push(`证据策略: ${strategy.evidence_policy}`);
+  }
+  if (strategy.limit_per_condition !== undefined && strategy.limit_per_condition !== null) {
+    lines.push(`每条件证据上限: ${strategy.limit_per_condition}`);
+  }
+
+  return lines.join("\n");
+}
+
+function conditionToText(condition) {
+  if (typeof condition === "string") {
+    return condition;
+  }
+  if (!condition?.label) {
+    return "";
+  }
+
+  return condition.status ? `${condition.label} (${condition.status})` : condition.label;
 }

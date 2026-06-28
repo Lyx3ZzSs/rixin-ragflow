@@ -43,3 +43,25 @@ test("buildAuditText includes task, filters, selected contract, and evidence lin
 test("strategyToText serializes strategy labels for clipboard use", () => {
   assert.match(strategyToText([["字段过滤", "限定采购类合同。"]]), /^字段过滤: 限定采购类合同。$/);
 });
+
+test("strategyToText serializes structured backend strategy", () => {
+  const text = strategyToText({
+    query: "筛选即将到期的高风险采购合同",
+    conditions: [
+      { label: "高风险", status: "required" },
+      { label: "90 天内到期" }
+    ],
+    filters: {
+      risk: "高",
+      owner: "采购部"
+    },
+    evidence_policy: "contract_first",
+    limit_per_condition: 3
+  });
+
+  assert.match(text, /查询: 筛选即将到期的高风险采购合同/);
+  assert.match(text, /条件: 高风险 \(required\); 90 天内到期/);
+  assert.match(text, /过滤: risk=高; owner=采购部/);
+  assert.match(text, /证据策略: contract_first/);
+  assert.match(text, /每条件证据上限: 3/);
+});
