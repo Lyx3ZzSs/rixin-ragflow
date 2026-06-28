@@ -22,8 +22,10 @@ from api.apps.services.contract_screening_service import (
     ContractScreeningError,
     ContractScreeningStore,
     create_initial_task,
+    mark_stale_task_failed,
     new_task_id,
     run_screening_task,
+    save_task_or_raise,
     validate_create_task_request,
 )
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -72,7 +74,10 @@ async def create_task(tenant_id: str):
 @login_required
 @add_tenant_id_to_kwargs
 async def get_task(task_id: str, tenant_id: str):
-    task = ContractScreeningStore().get(tenant_id, task_id)
+    try:
+        task = _load_task_or_error(tenant_id, task_id)
+    except ContractScreeningError as exc:
+        return get_error_data_result(message=exc.message)
     if not task:
         return get_error_data_result(message="Task not found")
 
@@ -90,7 +95,10 @@ async def get_task(task_id: str, tenant_id: str):
 @login_required
 @add_tenant_id_to_kwargs
 async def get_results(task_id: str, tenant_id: str):
-    task = ContractScreeningStore().get(tenant_id, task_id)
+    try:
+        task = _load_task_or_error(tenant_id, task_id)
+    except ContractScreeningError as exc:
+        return get_error_data_result(message=exc.message)
     if not task:
         return get_error_data_result(message="Task not found")
 
@@ -137,6 +145,16 @@ def _start_background_task(tenant_id: str, task_id: str) -> asyncio.Future:
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
     task.add_done_callback(_log_background_task_exception)
+    return task
+
+
+def _load_task_or_error(tenant_id: str, task_id: str) -> dict | None:
+    store = ContractScreeningStore()
+    task = store.get(tenant_id, task_id)
+    if not task:
+        return None
+    if mark_stale_task_failed(task):
+        save_task_or_raise(store, task)
     return task
 
 

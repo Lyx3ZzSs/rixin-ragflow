@@ -26,6 +26,8 @@ from rag.utils.redis_conn import REDIS_CONN
 
 DEFAULT_FILTERS = {"risk": "全部", "status": "全部", "source": "全部"}
 TASK_TTL_SECONDS = 60 * 60 * 24
+TASK_STALE_SECONDS = 10 * 60
+ACTIVE_TASK_STATUSES = {"pending", "running"}
 
 
 class ContractScreeningError(Exception):
@@ -125,6 +127,43 @@ class ContractScreeningStore:
 
 def new_task_id() -> str:
     return get_uuid()
+
+
+def save_task_or_raise(store: ContractScreeningStore, task: dict[str, Any]) -> None:
+    if not store.save(task):
+        raise ContractScreeningError("Failed to persist contract screening task")
+
+
+def mark_stale_task_failed(
+    task: dict[str, Any],
+    *,
+    now: float | None = None,
+    stale_seconds: int = TASK_STALE_SECONDS,
+) -> bool:
+    status = str(task.get("status") or "").lower()
+    if status not in ACTIVE_TASK_STATUSES:
+        return False
+
+    try:
+        updated_at = float(task.get("updated_at") or 0)
+    except Exception:
+        updated_at = 0
+    if updated_at <= 0:
+        return False
+
+    now = time.time() if now is None else now
+    if now - updated_at <= stale_seconds:
+        return False
+
+    message = "筛选任务超时，请重新发起筛选"
+    task.update({
+        "status": "failed",
+        "phase": "timeout",
+        "progress": 1.0,
+        "message": message,
+        "error": message,
+    })
+    return True
 
 
 def _field_value(source: Any, *names: str) -> Any:
@@ -373,7 +412,7 @@ async def run_screening_task(
             "strategy": strategy,
             "error": "",
         })
-        store.save(task)
+        save_task_or_raise(store, task)
 
         req = _build_search_request(task)
         result = await _call_search_service(search_service, tenant_id, task, req)
@@ -384,7 +423,7 @@ async def run_screening_task(
             "progress": 0.68,
             "message": "正在复核合同证据",
         })
-        store.save(task)
+        save_task_or_raise(store, task)
 
         grouped = group_chunks_by_document(result.get("chunks", []))
         items = [
@@ -402,7 +441,7 @@ async def run_screening_task(
             "skipped": {"unparsed": 0},
             "error": "",
         })
-        store.save(task)
+        save_task_or_raise(store, task)
         return task
     except Exception as exc:
         message = exc.message if isinstance(exc, ContractScreeningError) else str(exc)
@@ -412,7 +451,12 @@ async def run_screening_task(
             "message": message,
             "error": message,
         })
-        store.save(task)
+        saved_failed_state = store.save(task)
+        if not saved_failed_state and not (
+            isinstance(exc, ContractScreeningError)
+            and exc.message == "Failed to persist contract screening task"
+        ):
+            raise ContractScreeningError("Failed to persist contract screening task") from exc
         if isinstance(exc, ContractScreeningError):
             raise
         raise ContractScreeningError(message) from exc

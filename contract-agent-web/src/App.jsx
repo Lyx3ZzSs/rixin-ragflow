@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createScreeningTask, getScreeningResults, getScreeningTask } from "./api.js";
+import { createScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask } from "./api.js";
 import { contracts, promptExamples } from "./data.js";
 import {
   buildAuditText,
@@ -367,7 +367,12 @@ function ChatView({
   viewingItemId,
   onCopyAudit,
   inputValue,
-  setInputValue
+  setInputValue,
+  knowledgeBases,
+  selectedKnowledgeBaseId,
+  onKnowledgeBaseChange,
+  isKnowledgeBaseLoading,
+  knowledgeBaseError
 }) {
   const bodyRef = useRef(null);
   const inputRef = useRef(null);
@@ -380,7 +385,7 @@ function ChatView({
 
   function handleSend() {
     const trimmed = inputValue.trim();
-    if (!trimmed || isStreaming) return;
+    if (!trimmed || isStreaming || !selectedKnowledgeBaseId) return;
     onSend(trimmed);
     setInputValue("");
   }
@@ -464,6 +469,28 @@ function ChatView({
 
       {/* Chat input bar */}
       <div className="chat-input-bar">
+        <div className="kb-toolbar">
+          <label className="kb-selector">
+            <span>知识库</span>
+            <select
+              value={selectedKnowledgeBaseId || ""}
+              onChange={(event) => onKnowledgeBaseChange(event.target.value)}
+              disabled={isStreaming || isKnowledgeBaseLoading || knowledgeBases.length === 0}
+            >
+              <option value="">
+                {isKnowledgeBaseLoading ? "正在加载知识库..." : "请选择知识库"}
+              </option>
+              {knowledgeBases.map((kb) => (
+                <option key={kb.id} value={kb.id}>
+                  {kb.name} · {kb.document_count} 份文档
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className={`kb-state${knowledgeBaseError ? " is-error" : ""}`}>
+            {knowledgeBaseError || (selectedKnowledgeBaseId ? "已连接当前知识库" : "选择知识库后开始筛选")}
+          </span>
+        </div>
         <div className="chat-input-row">
           <textarea
             ref={inputRef}
@@ -479,7 +506,7 @@ function ChatView({
             className="chat-send"
             type="button"
             onClick={handleSend}
-            disabled={isStreaming || !inputValue.trim()}
+            disabled={isStreaming || !inputValue.trim() || !selectedKnowledgeBaseId}
             aria-label="发送消息"
           >
             <SendIcon />
@@ -492,7 +519,7 @@ function ChatView({
               key={prompt}
               type="button"
               onClick={() => setInputValue(prompt)}
-              disabled={isStreaming}
+              disabled={isStreaming || !selectedKnowledgeBaseId}
             >
               {prompt}
             </button>
@@ -725,6 +752,18 @@ function readSelectedKnowledgeBaseId() {
   return kbId;
 }
 
+function persistSelectedKnowledgeBaseId(kbId) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (kbId) {
+    window.localStorage?.setItem("contract-agent-kb-id", kbId);
+  } else {
+    window.localStorage?.removeItem("contract-agent-kb-id");
+  }
+}
+
 function formatConversationTime(date = new Date()) {
   return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
 }
@@ -735,6 +774,11 @@ function resolveTaskId(task) {
 
 function taskFailureMessage(task, fallback = "任务失败") {
   return task?.message || task?.error || task?.detail || fallback;
+}
+
+function pollingTimeoutMessage(maxAttempts, intervalMs) {
+  const seconds = Math.ceil((maxAttempts * intervalMs) / 1000);
+  return `筛选任务超过 ${seconds} 秒未完成，请稍后刷新任务状态或重新发起筛选。`;
 }
 
 function createEmptyConversation() {
@@ -756,7 +800,10 @@ export default function App() {
   const [streamingPhases, setStreamingPhases] = useState([]);
   const [toast, setToast] = useState({ message: "已完成", visible: false });
   const [evidenceToast, setEvidenceToast] = useState("");
-  const [selectedKnowledgeBaseId] = useState(() => readSelectedKnowledgeBaseId());
+  const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState(() => readSelectedKnowledgeBaseId());
+  const [knowledgeBases, setKnowledgeBases] = useState([]);
+  const [knowledgeBaseLoading, setKnowledgeBaseLoading] = useState(false);
+  const [knowledgeBaseError, setKnowledgeBaseError] = useState("");
 
   const [conversations, setConversations] = useState(() => buildInitialConversations());
   const [activeConversationId, setActiveConversationId] = useState("conv-1");
@@ -789,6 +836,35 @@ export default function App() {
     },
     []
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    setKnowledgeBaseLoading(true);
+    setKnowledgeBaseError("");
+
+    getKnowledgeBases()
+      .then((items) => {
+        if (cancelled || !mountedRef.current) return;
+        setKnowledgeBases(items);
+        if (!selectedKnowledgeBaseId && items.length > 0) {
+          setSelectedKnowledgeBaseId(items[0].id);
+          persistSelectedKnowledgeBaseId(items[0].id);
+        }
+      })
+      .catch((error) => {
+        if (cancelled || !mountedRef.current) return;
+        const message = error instanceof Error ? error.message : String(error || "知识库加载失败");
+        setKnowledgeBaseError(message);
+      })
+      .finally(() => {
+        if (cancelled || !mountedRef.current) return;
+        setKnowledgeBaseLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /* ─── Actions ─────────────────────────────────────────────────── */
 
@@ -918,6 +994,11 @@ export default function App() {
     copyText(text, "已复制审计包");
   }
 
+  function handleKnowledgeBaseChange(kbId) {
+    setSelectedKnowledgeBaseId(kbId);
+    persistSelectedKnowledgeBaseId(kbId);
+  }
+
   function appendMessagesToConversation(conversationId, messagesToAppend, { titlePrompt } = {}) {
     if (!mountedRef.current) return;
     setConversations((prev) =>
@@ -975,8 +1056,8 @@ export default function App() {
     });
   }
 
-  async function pollScreeningTask(taskId, runId) {
-    while (isActiveScreeningRun(runId)) {
+  async function pollScreeningTask(taskId, runId, maxAttempts = 120, intervalMs = 1500) {
+    for (let attempt = 0; attempt < maxAttempts && isActiveScreeningRun(runId); attempt += 1) {
       const current = await getScreeningTask(taskId);
       if (!isActiveScreeningRun(runId)) {
         return null;
@@ -992,6 +1073,10 @@ export default function App() {
       }
 
       await waitForNextPoll();
+    }
+
+    if (isActiveScreeningRun(runId)) {
+      throw new Error(pollingTimeoutMessage(maxAttempts, intervalMs));
     }
 
     return null;
@@ -1112,6 +1197,11 @@ export default function App() {
             onCopyAudit={handleCopyAudit}
             inputValue={inputValue}
             setInputValue={setInputValue}
+            knowledgeBases={knowledgeBases}
+            selectedKnowledgeBaseId={selectedKnowledgeBaseId}
+            onKnowledgeBaseChange={handleKnowledgeBaseChange}
+            isKnowledgeBaseLoading={knowledgeBaseLoading}
+            knowledgeBaseError={knowledgeBaseError}
           />
         </div>
 

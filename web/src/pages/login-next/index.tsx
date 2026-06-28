@@ -8,7 +8,7 @@ import {
 } from '@/hooks/use-login-request';
 import { useSystemConfig } from '@/hooks/use-system-request';
 import { rsaPsw } from '@/utils';
-import { getContractAgentDefaultRoute } from '@/utils/contract-agent-config';
+import { redirectToDefaultRoute } from '@/utils/contract-agent-config';
 import { useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
@@ -264,12 +264,11 @@ const Login = () => {
   const registerEnabled = config?.registerEnabled !== 0;
 
   const { isLogin } = useAuth();
-  const defaultRoute = getContractAgentDefaultRoute();
   useEffect(() => {
     if (isLogin) {
-      navigate(defaultRoute);
+      redirectToDefaultRoute(navigate);
     }
-  }, [defaultRoute, isLogin, navigate]);
+  }, [isLogin, navigate]);
 
   const handleLoginWithChannel = async (channel: string) => {
     await loginWithChannel(channel);
@@ -326,7 +325,7 @@ const Login = () => {
           password: rsaPassWord,
         });
         if (code === 0) {
-          navigate(defaultRoute);
+          redirectToDefaultRoute(navigate);
         }
       } else {
         const code = await register({

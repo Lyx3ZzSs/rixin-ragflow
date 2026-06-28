@@ -1,6 +1,7 @@
 import {
   getContractAgentDefaultRoute,
   isContractAgentEnabled,
+  redirectToDefaultRoute,
 } from './contract-agent-config';
 
 describe('contract agent config', () => {
@@ -42,7 +43,7 @@ describe('contract agent config', () => {
   it('uses the contract agent route by default when enabled', () => {
     expect(
       getContractAgentDefaultRoute({ VITE_CONTRACT_AGENT_ENABLED: 'true' }),
-    ).toBe('/contract-agent');
+    ).toBe('/contract-agent/');
   });
 
   it('uses the custom contract agent route when enabled', () => {
@@ -52,5 +53,31 @@ describe('contract agent config', () => {
         VITE_CONTRACT_AGENT_DEFAULT_ROUTE: '/contracts',
       }),
     ).toBe('/contracts');
+  });
+
+  it('loads the standalone contract agent with document navigation', () => {
+    const navigate = jest.fn();
+    const location = { assign: jest.fn() };
+
+    redirectToDefaultRoute(navigate, {
+      env: { VITE_CONTRACT_AGENT_ENABLED: 'true' },
+      location,
+    });
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(location.assign).toHaveBeenCalledWith('/contract-agent/');
+  });
+
+  it('uses SPA navigation for normal RAGFlow routes', () => {
+    const navigate = jest.fn();
+    const location = { assign: jest.fn() };
+
+    redirectToDefaultRoute(navigate, {
+      env: { VITE_CONTRACT_AGENT_ENABLED: 'false' },
+      location,
+    });
+
+    expect(location.assign).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith('/');
   });
 });

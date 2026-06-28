@@ -1,4 +1,5 @@
 const CONTRACT_SCREENING_BASE = "/api/v1/contract-screening/tasks";
+const KNOWLEDGE_BASE_LIST = "/api/v1/datasets";
 
 export async function parseResponse(response) {
   let payload = {};
@@ -44,6 +45,28 @@ export async function getScreeningResults(taskId) {
     ...data,
     items: Array.isArray(data.items) ? data.items.map(mapScreeningItemToContract) : []
   };
+}
+
+export async function getKnowledgeBases() {
+  const response = await fetch(`${KNOWLEDGE_BASE_LIST}?page=1&page_size=100`, {
+    credentials: "include"
+  });
+  const data = await parseResponse(response);
+  const items = Array.isArray(data?.kbs)
+    ? data.kbs
+    : Array.isArray(data?.datasets)
+      ? data.datasets
+      : Array.isArray(data)
+        ? data
+        : [];
+
+  return items
+    .map((item) => ({
+      id: item?.id || item?.kb_id,
+      name: item?.name || item?.nickname || item?.title || "未命名知识库",
+      document_count: item?.document_count ?? item?.doc_num ?? item?.chunk_num ?? 0
+    }))
+    .filter((item) => item.id);
 }
 
 export function mapScreeningItemToContract(item) {

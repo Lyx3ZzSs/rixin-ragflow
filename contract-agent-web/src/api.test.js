@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createScreeningTask,
+  getKnowledgeBases,
   getScreeningResults,
   mapScreeningItemToContract,
   parseResponse
@@ -176,6 +177,39 @@ test("createScreeningTask posts JSON body and propagates HTTP errors", async () 
       createScreeningTask({ kbId: "kb-1", prompt: "筛选高风险合同", filters: { risk: "高" } }),
       /HTTP 503/
     );
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("getKnowledgeBases maps dataset list responses for the selector", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "/api/v1/datasets?page=1&page_size=100");
+    assert.deepEqual(options, { credentials: "include" });
+
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          code: 0,
+          data: {
+            kbs: [
+              { id: "kb-1", name: "合同知识库", document_count: 12 },
+              { kb_id: "kb-2", nickname: "历史合同", doc_num: 4 }
+            ]
+          }
+        };
+      }
+    };
+  };
+
+  try {
+    assert.deepEqual(await getKnowledgeBases(), [
+      { id: "kb-1", name: "合同知识库", document_count: 12 },
+      { id: "kb-2", name: "历史合同", document_count: 4 }
+    ]);
   } finally {
     globalThis.fetch = previousFetch;
   }

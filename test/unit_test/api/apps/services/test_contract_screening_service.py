@@ -10,6 +10,7 @@ from api.apps.services.contract_screening_service import (
     create_initial_task,
     group_chunks_by_document,
     map_group_to_contract_result,
+    mark_stale_task_failed,
     run_screening_task,
     validate_create_task_request,
 )
@@ -25,6 +26,11 @@ class FakeRedis:
 
     def get(self, key):
         return self.values.get(key)
+
+
+class FailingRedis(FakeRedis):
+    def set_obj(self, key, obj, exp=3600):
+        return False
 
 
 def _new_saved_task(store, prompt="筛选付款周期超过60天且包含违约金条款的合同"):
@@ -154,6 +160,60 @@ def test_run_screening_task_retrieves_and_sorts_contract_results():
     saved = store.get("tenant-1", "task-1")
     assert saved["status"] == "done"
     assert saved["items"][0]["contract_id"] == "doc-high"
+
+
+def test_run_screening_task_fails_fast_when_progress_save_fails():
+    store = ContractScreeningStore(redis=FailingRedis(), ttl_seconds=60)
+    task = create_initial_task(
+        task_id="task-1",
+        tenant_id="tenant-1",
+        user_id="user-1",
+        kb_id="kb-1",
+        prompt="筛选付款周期超过60天的合同",
+        filters={"risk": "全部", "status": "全部", "source": "全部"},
+    )
+    store.redis.values["contract_screening:tenant-1:task-1"] = json.dumps(task, ensure_ascii=False)
+
+    with pytest.raises(ContractScreeningError) as exc:
+        asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=SearchDatasetsStub({"chunks": []})))
+
+    assert exc.value.message == "Failed to persist contract screening task"
+
+
+def test_mark_stale_task_failed_expires_active_tasks():
+    task = create_initial_task(
+        task_id="task-1",
+        tenant_id="tenant-1",
+        user_id="user-1",
+        kb_id="kb-1",
+        prompt="筛选付款周期超过60天的合同",
+        filters={"risk": "全部", "status": "全部", "source": "全部"},
+    )
+    task.update({"status": "running", "updated_at": 100.0})
+
+    changed = mark_stale_task_failed(task, now=1000.0, stale_seconds=60)
+
+    assert changed is True
+    assert task["status"] == "failed"
+    assert task["phase"] == "timeout"
+    assert task["progress"] == 1.0
+    assert "超时" in task["message"]
+    assert "超时" in task["error"]
+
+
+def test_mark_stale_task_failed_keeps_terminal_tasks():
+    task = create_initial_task(
+        task_id="task-1",
+        tenant_id="tenant-1",
+        user_id="user-1",
+        kb_id="kb-1",
+        prompt="筛选付款周期超过60天的合同",
+        filters={"risk": "全部", "status": "全部", "source": "全部"},
+    )
+    task.update({"status": "done", "updated_at": 100.0})
+
+    assert mark_stale_task_failed(task, now=1000.0, stale_seconds=60) is False
+    assert task["status"] == "done"
 
 
 def test_run_screening_task_marks_task_failed_when_search_fails():
