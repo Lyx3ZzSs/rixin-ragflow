@@ -75,10 +75,17 @@ test("send starts screening directly after parsing conditions", () => {
   assert.ok(!handleSendBody.includes("请确认后开始筛选"), "send should not ask for condition confirmation");
 });
 
+test("result cards expose original file downloads without opening evidence", () => {
+  assert.match(appSource, /下载原文件/, "result cards should expose an original file download action");
+  assert.match(appSource, /item\.downloadUrl &&/, "download action should require a mapped download URL");
+  assert.match(appSource, /event\.stopPropagation\(\)/, "download clicks should not trigger evidence viewing");
+  assert.match(appSource, /className="btn btn-secondary btn-small download-file-button"/, "download action should use compact button styling");
+});
+
 test("favicon uses the Vite base URL for the /contract-agent mount", () => {
   assert.match(
     indexHtml,
-    /<link rel="icon" type="image\/x-icon" href="\/favicon\.ico" \/>/,
+    /<link rel="icon" type="image\/svg\+xml" href="\/logo\.svg" \/>/,
     "Vite should rewrite the favicon to the configured base path",
   );
 });

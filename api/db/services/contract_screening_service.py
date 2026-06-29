@@ -18,6 +18,7 @@ from __future__ import annotations
 import time
 from datetime import datetime
 from typing import Any
+from urllib.parse import quote
 
 from api.db.db_models import (
     DB,
@@ -303,10 +304,12 @@ def build_results_payload(tenant_id: str, task_id: str, user_id: str | None = No
         by_result.setdefault(evidence["result_id"], []).append(_frontend_evidence(evidence))
 
     items = []
+    kb_id = task.get("kb_id", "")
     for result in results:
-        items.append({
+        items.append(frontend_item_with_download({
             "id": result["id"],
             "contract_id": result["document_id"],
+            "document_id": result["document_id"],
             "name": result["title"],
             "status": result["status"],
             "risk": result["risk"],
@@ -317,7 +320,7 @@ def build_results_payload(tenant_id: str, task_id: str, user_id: str | None = No
             "actions": result["actions"] or [],
             "timeline": result["timeline"] or [],
             "evidence": by_result.get(result["id"], []),
-        })
+        }, kb_id=kb_id))
 
     return {
         "task_id": task_id,
@@ -339,6 +342,22 @@ def _frontend_evidence(row: dict[str, Any]) -> dict[str, Any]:
         "chunk_id": row.get("chunk_id") or "",
         "condition_id": row.get("condition_id") or "",
     }
+
+
+def frontend_item_with_download(item: dict[str, Any], *, kb_id: str | None) -> dict[str, Any]:
+    document_id = item.get("document_id") or item.get("contract_id") or item.get("id") or ""
+    next_item = {
+        **item,
+        "document_id": document_id,
+        "kb_id": kb_id or item.get("kb_id") or "",
+    }
+    if next_item["kb_id"] and document_id:
+        next_item["download_url"] = _document_download_url(next_item["kb_id"], document_id)
+    return next_item
+
+
+def _document_download_url(kb_id: str, document_id: str) -> str:
+    return f"/api/v1/datasets/{quote(str(kb_id), safe='')}/documents/{quote(str(document_id), safe='')}"
 
 
 def _condition_reason(conditions: Any) -> str:

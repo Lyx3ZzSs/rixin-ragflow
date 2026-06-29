@@ -185,6 +185,12 @@ async def get_results(task_id: str, tenant_id: str):
     if not isinstance(skipped, dict):
         skipped = {}
 
+    kb_id = task.get("kb_id", "")
+    items = [
+        contract_screening_db_service.frontend_item_with_download(item, kb_id=kb_id)
+        for item in items
+    ]
+
     return get_result(data={
         "task_id": task.get("task_id", task_id),
         "prompt": task.get("prompt", ""),

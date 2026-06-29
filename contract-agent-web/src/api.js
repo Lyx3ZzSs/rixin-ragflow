@@ -188,6 +188,8 @@ export function mapScreeningItemToContract(item) {
   const meta = item?.meta || {};
   const evidence = normalizeEvidence(item?.evidence);
   const sourceTypes = normalizeSourceTypes(item?.sourceTypes, item?.evidence);
+  const documentId = item?.document_id || item?.documentId || item?.contract_id || meta.document_id || "";
+  const kbId = item?.kb_id || item?.kbId || meta.kb_id || "";
 
   return {
     id: item?.id || item?.contract_id,
@@ -201,11 +203,21 @@ export function mapScreeningItemToContract(item) {
     score: normalizeScore(item?.score ?? meta.score ?? meta.confidence),
     permissions: item?.permissions ?? meta.permissions,
     sourceTypes,
+    documentId,
+    kbId,
+    downloadUrl: item?.download_url || item?.downloadUrl || documentDownloadUrl({ kbId, documentId }),
     reason: item?.reason || conditionReason(item?.matched_conditions) || "命中当前筛选条件。",
     evidence,
     actions: Array.isArray(item?.actions) ? item.actions : [],
     timeline: Array.isArray(item?.timeline) ? item.timeline : []
   };
+}
+
+function documentDownloadUrl({ kbId, documentId }) {
+  if (!kbId || !documentId) {
+    return "";
+  }
+  return `/api/v1/datasets/${encodeURIComponent(kbId)}/documents/${encodeURIComponent(documentId)}`;
 }
 
 function isFrontendContract(item) {

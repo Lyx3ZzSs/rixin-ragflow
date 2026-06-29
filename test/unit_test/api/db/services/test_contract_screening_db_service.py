@@ -260,3 +260,48 @@ def test_build_results_payload_filters_task_by_user(monkeypatch):
 
     assert result is None
     assert calls == [{"tenant_id": "tenant-1", "task_id": "task-1", "user_id": "user-1"}]
+
+
+def test_build_results_payload_includes_original_document_download_url(monkeypatch):
+    monkeypatch.setattr(
+        contract_screening_service.ContractScreeningTaskService,
+        "get_task",
+        lambda **_kwargs: {
+            "id": "task-1",
+            "kb_id": "kb-1",
+            "prompt": "筛选合同",
+            "parsed_conditions": {},
+            "skipped": {},
+            "status": "done",
+        },
+    )
+    monkeypatch.setattr(
+        contract_screening_service.ContractScreeningResultService,
+        "list_by_task",
+        lambda **_kwargs: [
+            {
+                "id": "result-1",
+                "document_id": "doc-1",
+                "title": "采购合同.pdf",
+                "status": "matched",
+                "risk": "高",
+                "score": 91,
+                "reason": "命中付款条件",
+                "meta": {},
+                "matched_conditions": [],
+                "actions": [],
+                "timeline": [],
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        contract_screening_service.ContractScreeningEvidenceService,
+        "list_by_task",
+        lambda **_kwargs: [],
+    )
+
+    payload = contract_screening_service.build_results_payload("tenant-1", "task-1", user_id="user-1")
+
+    assert payload["items"][0]["kb_id"] == "kb-1"
+    assert payload["items"][0]["document_id"] == "doc-1"
+    assert payload["items"][0]["download_url"] == "/api/v1/datasets/kb-1/documents/doc-1"

@@ -67,6 +67,16 @@ function DocumentIcon() {
   );
 }
 
+function DownloadIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7,10 12,15 17,10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
 function TrashIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -607,11 +617,18 @@ function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit, onCre
                 const evidenceCount = Array.isArray(item.evidence) ? item.evidence.length : 0;
 
                 return (
-                  <button
+                  <div
                     key={item.id || `${item.title}-${index}`}
                     className={`chat-result-card${viewingItemId === item.id ? " is-viewing" : ""}`}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     onClick={() => onViewEvidence({ ...item, taskId: message.taskId })}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onViewEvidence({ ...item, taskId: message.taskId });
+                      }
+                    }}
                   >
                     <div className="result-top">
                       <div>
@@ -641,8 +658,21 @@ function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit, onCre
                           <EyeIcon /> 查看 {evidenceCount} 条证据
                         </span>
                       )}
+                      {item.downloadUrl && (
+                        <a
+                          className="btn btn-secondary btn-small download-file-button"
+                          href={item.downloadUrl}
+                          download
+                          onClick={(event) => {
+                            event.stopPropagation();
+                          }}
+                          title="下载原文件"
+                        >
+                          <DownloadIcon /> 下载原文件
+                        </a>
+                      )}
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

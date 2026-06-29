@@ -39,7 +39,10 @@ test("mapScreeningItemToContract preserves existing frontend contract shape", ()
 
 test("mapScreeningItemToContract maps contract-first backend shape into frontend shape", () => {
   const result = mapScreeningItemToContract({
+    kb_id: "kb-1",
     contract_id: "CON-2026-7",
+    document_id: "doc-2026-7",
+    download_url: "/api/v1/datasets/kb-1/documents/doc-2026-7",
     name: "年度采购框架协议",
     meta: {
       supplier: "北方材料",
@@ -71,6 +74,9 @@ test("mapScreeningItemToContract maps contract-first backend shape into frontend
     score: 0.87,
     permissions: "采购可见",
     sourceTypes: ["合同正文", "审批记录"],
+    documentId: "doc-2026-7",
+    kbId: "kb-1",
+    downloadUrl: "/api/v1/datasets/kb-1/documents/doc-2026-7",
     reason: "即将到期: matched",
     evidence: [
       { source: "合同正文", ref: "第 8 页 / chunk-8", text: "合同将于九月到期。", page: 8, chunk_id: "chunk-8" },
@@ -96,7 +102,7 @@ test("getScreeningResults fetches task results and maps items", async () => {
           code: 0,
           data: {
             total: 1,
-            items: [{ contract_id: "CON-1", name: "合同一", meta: { score: 75 }, overall_status: "unmatched" }]
+            items: [{ kb_id: "kb-1", contract_id: "CON-1", document_id: "doc-1", name: "合同一", meta: { score: 75 }, overall_status: "unmatched" }]
           }
         };
       }
@@ -120,6 +126,9 @@ test("getScreeningResults fetches task results and maps items", async () => {
         score: 75,
         permissions: undefined,
         sourceTypes: ["合同正文"],
+        documentId: "doc-1",
+        kbId: "kb-1",
+        downloadUrl: "/api/v1/datasets/kb-1/documents/doc-1",
         reason: "命中当前筛选条件。",
         evidence: [],
         actions: [],
