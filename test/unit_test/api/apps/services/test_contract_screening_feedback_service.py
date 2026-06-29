@@ -22,8 +22,10 @@ from api.apps.services.contract_screening_feedback_service import create_screeni
 class FakeRepository:
     def __init__(self):
         self.records = []
+        self.build_calls = []
 
-    def build_results_payload(self, tenant_id, task_id):
+    def build_results_payload(self, tenant_id, task_id, user_id=None):
+        self.build_calls.append((tenant_id, task_id, user_id))
         if tenant_id != "tenant-1" or task_id != "task-1":
             return None
         return {
@@ -65,6 +67,7 @@ def test_create_screening_feedback_saves_result_feedback():
     assert result["feedback_type"] == "useful"
     assert repository.records[0]["user_id"] == "user-1"
     assert repository.records[0]["comment"] == "证据准确"
+    assert repository.build_calls == [("tenant-1", "task-1", "user-1")]
 
 
 def test_create_screening_feedback_rejects_unknown_type():

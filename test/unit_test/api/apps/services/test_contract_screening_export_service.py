@@ -26,10 +26,12 @@ class FakeRepository:
         self.payload = payload
         self.exports = []
         self.updated = []
+        self.build_calls = []
 
-    def build_results_payload(self, tenant_id, task_id):
+    def build_results_payload(self, tenant_id, task_id, user_id=None):
         assert tenant_id == "tenant-1"
         assert task_id == "task-1"
+        self.build_calls.append((tenant_id, task_id, user_id))
         return self.payload
 
     class ContractScreeningExportService:
@@ -109,6 +111,7 @@ def test_create_screening_export_writes_excel_sheets(tmp_path):
     assert workbook["合同结果"]["A2"].value == "采购合同.pdf"
     assert workbook["证据明细"]["F2"].value == "付款期限为验收合格后90日内。"
     assert repository.updated[0][0] == result["export_id"]
+    assert repository.build_calls == [("tenant-1", "task-1", "user-1")]
 
 
 def test_create_screening_export_writes_word_document(tmp_path):

@@ -149,7 +149,10 @@ def _load_api(monkeypatch):
         ContractScreeningTaskService=SimpleNamespace(
             list_tasks=lambda **_kwargs: {"total": 0, "items": []},
         ),
-        build_results_payload=lambda _tenant_id, _task_id: None,
+        ContractScreeningExportService=SimpleNamespace(
+            get_by_id=lambda _export_id: (False, None),
+        ),
+        build_results_payload=lambda _tenant_id, _task_id, user_id=None: None,
     )
     _stub(
         monkeypatch,
@@ -186,7 +189,10 @@ def _load_api(monkeypatch):
         ContractScreeningTaskService=SimpleNamespace(
             list_tasks=lambda **_kwargs: {"total": 0, "items": []},
         ),
-        build_results_payload=lambda _tenant_id, _task_id: None,
+        ContractScreeningExportService=SimpleNamespace(
+            get_by_id=lambda _export_id: (False, None),
+        ),
+        build_results_payload=lambda _tenant_id, _task_id, user_id=None: None,
     )
     return module
 
@@ -540,7 +546,7 @@ def test_get_results_defaults_strategy_to_dict(monkeypatch):
 
 def test_create_export_returns_export_metadata(monkeypatch):
     module = _load_api(monkeypatch)
-    task = {"task_id": "task-1", "status": "done"}
+    task = {"task_id": "task-1", "tenant_id": "tenant-1", "user_id": "user-1", "status": "done"}
     store = FakeStore({("tenant-1", "task-1"): task})
 
     async def fake_request_json():
@@ -572,12 +578,12 @@ def test_create_export_allows_persisted_completed_task(monkeypatch):
     monkeypatch.setattr(
         module.contract_screening_db_service,
         "build_results_payload",
-        lambda tenant_id, task_id: {
+        lambda tenant_id, task_id, user_id=None: {
             "task_id": task_id,
             "status": "done",
             "items": [],
         }
-        if tenant_id == "tenant-1" and task_id == "task-1"
+        if tenant_id == "tenant-1" and task_id == "task-1" and user_id == "user-1"
         else None,
     )
 
@@ -586,6 +592,29 @@ def test_create_export_allows_persisted_completed_task(monkeypatch):
     assert result["code"] == 0
     assert result["data"]["kwargs"]["task_id"] == "task-1"
     assert result["data"]["kwargs"]["export_format"] == "word"
+
+
+def test_get_export_rejects_other_user_export(monkeypatch):
+    module = _load_api(monkeypatch)
+    export = SimpleNamespace(
+        id="export-1",
+        task_id="task-1",
+        tenant_id="tenant-1",
+        user_id="other-user",
+        format="excel",
+        status="done",
+        file_name="result.xlsx",
+        file_key="/tmp/result.xlsx",
+        error="",
+    )
+    module.contract_screening_db_service.ContractScreeningExportService = SimpleNamespace(
+        get_by_id=lambda export_id: (export_id == "export-1", export),
+    )
+    monkeypatch.setattr(module, "current_user", SimpleNamespace(id="user-1"))
+
+    result = _run(module.get_export("export-1", tenant_id="tenant-1"))
+
+    assert result == {"code": 102, "message": "Export not found"}
 
 
 def test_create_feedback_returns_feedback_metadata(monkeypatch):

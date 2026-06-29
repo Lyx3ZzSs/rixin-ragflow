@@ -161,3 +161,17 @@ def test_result_and_evidence_payloads_preserve_frontend_shape():
         "score": None,
         "condition_id": "",
     }]
+
+
+def test_build_results_payload_filters_task_by_user(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        contract_screening_service.ContractScreeningTaskService,
+        "get_task",
+        lambda **kwargs: calls.append(kwargs) or None,
+    )
+
+    result = contract_screening_service.build_results_payload("tenant-1", "task-1", user_id="user-1")
+
+    assert result is None
+    assert calls == [{"tenant_id": "tenant-1", "task_id": "task-1", "user_id": "user-1"}]

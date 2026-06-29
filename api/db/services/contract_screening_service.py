@@ -61,11 +61,11 @@ class ContractScreeningTaskService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_task(cls, *, tenant_id: str, task_id: str) -> dict[str, Any] | None:
-        row = cls.model.get_or_none(
-            (cls.model.id == task_id)
-            & (cls.model.tenant_id == tenant_id)
-        )
+    def get_task(cls, *, tenant_id: str, task_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+        conditions = (cls.model.id == task_id) & (cls.model.tenant_id == tenant_id)
+        if user_id:
+            conditions = conditions & (cls.model.user_id == user_id)
+        row = cls.model.get_or_none(conditions)
         return row.to_dict() if row else None
 
     @classmethod
@@ -257,8 +257,8 @@ def persist_completed_task(task: dict[str, Any]) -> None:
                 ContractScreeningEvidenceService.insert_many(evidence_records)
 
 
-def build_results_payload(tenant_id: str, task_id: str) -> dict[str, Any] | None:
-    task = ContractScreeningTaskService.get_task(tenant_id=tenant_id, task_id=task_id)
+def build_results_payload(tenant_id: str, task_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+    task = ContractScreeningTaskService.get_task(tenant_id=tenant_id, task_id=task_id, user_id=user_id)
     if not task:
         return None
     results = ContractScreeningResultService.list_by_task(tenant_id=tenant_id, task_id=task_id)

@@ -38,7 +38,7 @@ def create_screening_feedback(
     result_id = feedback["result_id"]
     evidence_id = feedback["evidence_id"]
 
-    task_payload = repository.build_results_payload(tenant_id, task_id)
+    task_payload = repository.build_results_payload(tenant_id, task_id, user_id=user_id)
     if not task_payload:
         raise ContractScreeningError("Task not found")
     if result_id:

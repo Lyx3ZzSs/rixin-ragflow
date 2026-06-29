@@ -151,7 +151,7 @@ async def get_results(task_id: str, tenant_id: str):
     if not task:
         return get_error_data_result(message="Task not found")
 
-    persisted = contract_screening_db_service.build_results_payload(tenant_id, task_id)
+    persisted = contract_screening_db_service.build_results_payload(tenant_id, task_id, user_id=current_user.id)
     if persisted:
         return get_result(data=persisted)
 
@@ -182,7 +182,7 @@ async def get_results(task_id: str, tenant_id: str):
 @add_tenant_id_to_kwargs
 async def create_export(task_id: str, tenant_id: str):
     try:
-        if not _task_available_for_export(tenant_id, task_id):
+        if not _task_available_for_export(tenant_id, task_id, current_user.id):
             return get_error_data_result(message="Task not found")
 
         req = await get_request_json()
@@ -207,7 +207,7 @@ async def create_export(task_id: str, tenant_id: str):
 @add_tenant_id_to_kwargs
 async def get_export(export_id: str, tenant_id: str):
     success, export = contract_screening_db_service.ContractScreeningExportService.get_by_id(export_id)
-    if not success or not export or export.tenant_id != tenant_id:
+    if not success or not export or export.tenant_id != tenant_id or export.user_id != current_user.id:
         return get_error_data_result(message="Export not found")
     return get_result(data={
         "export_id": export.id,
@@ -273,11 +273,11 @@ def _load_task_or_error(tenant_id: str, task_id: str) -> dict | None:
     return task
 
 
-def _task_available_for_export(tenant_id: str, task_id: str) -> bool:
+def _task_available_for_export(tenant_id: str, task_id: str, user_id: str) -> bool:
     task = _load_task_or_error(tenant_id, task_id)
     if task:
-        return True
-    return bool(contract_screening_db_service.build_results_payload(tenant_id, task_id))
+        return task.get("user_id") == user_id
+    return bool(contract_screening_db_service.build_results_payload(tenant_id, task_id, user_id=user_id))
 
 
 def _log_background_task_exception(task: asyncio.Task):

@@ -42,7 +42,7 @@ def create_screening_export(
     if export_format not in EXPORT_FORMATS:
         raise ContractScreeningError("Unsupported export format")
 
-    payload = repository.build_results_payload(tenant_id, task_id)
+    payload = repository.build_results_payload(tenant_id, task_id, user_id=user_id)
     if not payload:
         raise ContractScreeningError("Task not found")
     if payload.get("status") != "done":
