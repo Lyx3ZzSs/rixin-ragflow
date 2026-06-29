@@ -559,6 +559,7 @@ async def run_screening_task(
     search_service: Any = None,
     history_service: Any = contract_screening_db_service,
     heartbeat_seconds: float = TASK_HEARTBEAT_SECONDS,
+    model_policy_service: Any = None,
 ) -> dict[str, Any]:
     store = store or ContractScreeningStore()
     task = store.get(tenant_id, task_id)
@@ -578,6 +579,14 @@ async def run_screening_task(
         save_task_or_raise(store, task)
 
         req = _build_search_request(task)
+        if model_policy_service is None:
+            from api.apps.services import contract_screening_model_policy as model_policy_service
+
+        model_policy_service.validate_contract_screening_models(
+            tenant_id=tenant_id,
+            task=task,
+            search_req=req,
+        )
         result = await _await_with_heartbeat(
             _call_search_service(search_service, tenant_id, task, req),
             store=store,

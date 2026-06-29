@@ -85,6 +85,19 @@ class NoopHistoryService:
         self.persisted.append(json.loads(json.dumps(task, ensure_ascii=False)))
 
 
+class AllowAllModelPolicy:
+    def __init__(self):
+        self.calls = []
+
+    def validate_contract_screening_models(self, *, tenant_id, task, search_req):
+        self.calls.append({"tenant_id": tenant_id, "task": task, "search_req": search_req})
+
+
+class RejectingModelPolicy:
+    def validate_contract_screening_models(self, *, tenant_id, task, search_req):
+        raise ContractScreeningError("合同筛选仅允许使用企业内网模型，请切换知识库和检索配置后重试。")
+
+
 def test_validate_create_task_request_requires_kb_id():
     with pytest.raises(ContractScreeningError) as exc:
         validate_create_task_request({"prompt": "筛选付款周期超过60天的合同"})
@@ -219,8 +232,20 @@ def test_run_screening_task_retrieves_and_sorts_contract_results():
 
     history = NoopHistoryService()
 
-    task = asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=search, history_service=history))
+    policy = AllowAllModelPolicy()
+    task = asyncio.run(
+        run_screening_task(
+            "tenant-1",
+            "task-1",
+            store=store,
+            search_service=search,
+            history_service=history,
+            model_policy_service=policy,
+        )
+    )
 
+    assert policy.calls[0]["tenant_id"] == "tenant-1"
+    assert policy.calls[0]["search_req"]["dataset_ids"] == ["kb-1"]
     assert search.calls == [{
         "tenant_id": "tenant-1",
         "req": {
@@ -265,6 +290,7 @@ def test_run_screening_task_heartbeats_while_waiting_for_search():
             search_service=SlowSearchStub({"chunks": []}),
             history_service=NoopHistoryService(),
             heartbeat_seconds=0.001,
+            model_policy_service=AllowAllModelPolicy(),
         )
     )
 
@@ -291,7 +317,16 @@ def test_run_screening_task_fails_fast_when_progress_save_fails():
     store.redis.values["contract_screening:tenant-1:task-1"] = json.dumps(task, ensure_ascii=False)
 
     with pytest.raises(ContractScreeningError) as exc:
-        asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=SearchDatasetsStub({"chunks": []}), history_service=NoopHistoryService()))
+        asyncio.run(
+            run_screening_task(
+                "tenant-1",
+                "task-1",
+                store=store,
+                search_service=SearchDatasetsStub({"chunks": []}),
+                history_service=NoopHistoryService(),
+                model_policy_service=AllowAllModelPolicy(),
+            )
+        )
 
     assert exc.value.message == "Failed to persist contract screening task"
 
@@ -338,7 +373,16 @@ def test_run_screening_task_marks_task_failed_when_search_fails():
     search = SearchDatasetsStub((False, "retrieval unavailable"))
 
     with pytest.raises(ContractScreeningError) as exc:
-        asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=search, history_service=NoopHistoryService()))
+        asyncio.run(
+            run_screening_task(
+                "tenant-1",
+                "task-1",
+                store=store,
+                search_service=search,
+                history_service=NoopHistoryService(),
+                model_policy_service=AllowAllModelPolicy(),
+            )
+        )
 
     assert "retrieval unavailable" in exc.value.message
     saved = store.get("tenant-1", "task-1")
@@ -363,13 +407,46 @@ def test_run_screening_task_uses_search_method_when_search_datasets_missing():
         ]
     }))
 
-    task = asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=search, history_service=NoopHistoryService()))
+    task = asyncio.run(
+        run_screening_task(
+            "tenant-1",
+            "task-1",
+            store=store,
+            search_service=search,
+            history_service=NoopHistoryService(),
+            model_policy_service=AllowAllModelPolicy(),
+        )
+    )
 
     assert search.calls[0]["dataset_id"] == "kb-1"
     assert search.calls[0]["tenant_id"] == "tenant-1"
     assert search.calls[0]["req"]["dataset_ids"] == ["kb-1"]
     assert task["status"] == "done"
     assert task["items"][0]["contract_id"] == "doc-1"
+
+
+def test_run_screening_task_rejects_external_model_before_search():
+    store = ContractScreeningStore(redis=FakeRedis(), ttl_seconds=60)
+    _new_saved_task(store)
+    search = SearchDatasetsStub({"chunks": []})
+
+    with pytest.raises(ContractScreeningError) as exc:
+        asyncio.run(
+            run_screening_task(
+                "tenant-1",
+                "task-1",
+                store=store,
+                search_service=search,
+                history_service=NoopHistoryService(),
+                model_policy_service=RejectingModelPolicy(),
+            )
+        )
+
+    assert "企业内网模型" in exc.value.message
+    assert search.calls == []
+    saved = store.get("tenant-1", "task-1")
+    assert saved["status"] == "failed"
+    assert "企业内网模型" in saved["error"]
 
 
 def test_build_strategy_returns_structured_strategy_and_keeps_filters():
