@@ -14,15 +14,18 @@ from common.contract_agent_internal_models import (
     SPRIXIN_CHAT_BASE_URL,
     SPRIXIN_CHAT_ID,
     SPRIXIN_CHAT_INSTANCE,
+    SPRIXIN_CHAT_MAX_TOKENS,
     SPRIXIN_CHAT_MODEL,
     SPRIXIN_EMBEDDING_BASE_URL,
     SPRIXIN_EMBEDDING_ID,
     SPRIXIN_EMBEDDING_INSTANCE,
+    SPRIXIN_EMBEDDING_MAX_TOKENS,
     SPRIXIN_EMBEDDING_MODEL,
     SPRIXIN_PROVIDER_NAME,
     SPRIXIN_RERANK_BASE_URL,
     SPRIXIN_RERANK_ID,
     SPRIXIN_RERANK_INSTANCE,
+    SPRIXIN_RERANK_MAX_TOKENS,
     SPRIXIN_RERANK_MODEL,
 )
 
@@ -71,6 +74,9 @@ class DefaultInternalModelMigrationRepository:
             extra=extra,
         )
 
+    def update_model_extra(self, model_id: str, extra: str) -> None:
+        TenantModelService.update_by_id(model_id, {"extra": extra})
+
     def update_tenant_defaults(self, tenant_id: str, chat_id: str, embedding_id: str, rerank_id: str) -> None:
         TenantService.update_by_id(
             tenant_id,
@@ -107,15 +113,19 @@ def _ensure_instance(provider_id: str, instance_name: str, api_key: str, base_ur
 
 
 def _ensure_model(provider_id: str, instance_id: str, model_type: str, model_name: str, max_tokens: int, repository: Any) -> None:
+    desired_extra = json.dumps({"max_tokens": max_tokens}, ensure_ascii=False)
     model = repository.get_model(provider_id, instance_id, model_type, model_name)
     if model:
+        current_extra = model.get("extra") if isinstance(model, dict) else model.extra
+        if current_extra != desired_extra and hasattr(repository, "update_model_extra"):
+            repository.update_model_extra(_obj_id(model), desired_extra)
         return
     repository.create_model(
         provider_id,
         instance_id,
         model_type,
         model_name,
-        json.dumps({"max_tokens": max_tokens}, ensure_ascii=False),
+        desired_extra,
     )
 
 
@@ -143,9 +153,9 @@ def ensure_contract_agent_internal_models(
     embedding = _ensure_instance(provider_id, SPRIXIN_EMBEDDING_INSTANCE, api_key, SPRIXIN_EMBEDDING_BASE_URL, repository)
     rerank = _ensure_instance(provider_id, SPRIXIN_RERANK_INSTANCE, api_key, SPRIXIN_RERANK_BASE_URL, repository)
 
-    _ensure_model(provider_id, _obj_id(chat), LLMType.CHAT.value, SPRIXIN_CHAT_MODEL, 32768, repository)
-    _ensure_model(provider_id, _obj_id(embedding), LLMType.EMBEDDING.value, SPRIXIN_EMBEDDING_MODEL, 8192, repository)
-    _ensure_model(provider_id, _obj_id(rerank), LLMType.RERANK.value, SPRIXIN_RERANK_MODEL, 8192, repository)
+    _ensure_model(provider_id, _obj_id(chat), LLMType.CHAT.value, SPRIXIN_CHAT_MODEL, SPRIXIN_CHAT_MAX_TOKENS, repository)
+    _ensure_model(provider_id, _obj_id(embedding), LLMType.EMBEDDING.value, SPRIXIN_EMBEDDING_MODEL, SPRIXIN_EMBEDDING_MAX_TOKENS, repository)
+    _ensure_model(provider_id, _obj_id(rerank), LLMType.RERANK.value, SPRIXIN_RERANK_MODEL, SPRIXIN_RERANK_MAX_TOKENS, repository)
 
     repository.update_tenant_defaults(tenant_id, result.chat_id, result.embedding_id, result.rerank_id)
     for kb_id in kb_ids:
