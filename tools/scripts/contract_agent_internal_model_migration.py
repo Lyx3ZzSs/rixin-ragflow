@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 
-from api.apps.services.contract_screening_internal_model_migration import ensure_contract_agent_internal_models
+from api.db.joint_services.contract_screening_internal_model_migration import ensure_contract_agent_internal_models
 
 
 def main() -> int:

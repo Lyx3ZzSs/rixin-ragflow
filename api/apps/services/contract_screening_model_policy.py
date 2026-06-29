@@ -10,33 +10,16 @@ from api.db.joint_services.tenant_model_service import (
 )
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.search_service import SearchService
+from common.contract_agent_internal_models import (
+    CONTRACT_AGENT_BLOCKED_PROVIDERS,
+    CONTRACT_AGENT_INTERNAL_MODEL_ERROR,
+    SPRIXIN_ALLOWED_BASE_URLS,
+    SPRIXIN_CHAT_ID,
+    SPRIXIN_EMBEDDING_ID,
+    SPRIXIN_PROVIDER_NAME,
+    SPRIXIN_RERANK_ID,
+)
 from common.constants import LLMType
-
-CONTRACT_AGENT_INTERNAL_MODEL_ERROR = "合同筛选仅允许使用企业内网模型，请切换知识库和检索配置后重试。"
-SPRIXIN_PROVIDER_NAME = "OpenAI-API-Compatible"
-SPRIXIN_CHAT_INSTANCE = "sprixin-chat"
-SPRIXIN_EMBEDDING_INSTANCE = "sprixin-embedding"
-SPRIXIN_RERANK_INSTANCE = "sprixin-rerank"
-SPRIXIN_CHAT_MODEL = "Qwen3-30B-A3B"
-SPRIXIN_EMBEDDING_MODEL = "bge-m3"
-SPRIXIN_RERANK_MODEL = "bge-reranker-v2-m3"
-SPRIXIN_CHAT_BASE_URL = "http://10.10.10.245:8000/v1"
-SPRIXIN_EMBEDDING_BASE_URL = "http://10.10.10.245:8000"
-SPRIXIN_RERANK_BASE_URL = "http://10.10.10.245:8000/rerank"
-SPRIXIN_ALLOWED_BASE_URLS = {
-    SPRIXIN_CHAT_BASE_URL,
-    SPRIXIN_EMBEDDING_BASE_URL,
-    SPRIXIN_RERANK_BASE_URL,
-}
-CONTRACT_AGENT_BLOCKED_PROVIDERS = {
-    "SILICONFLOW",
-    "OpenAI",
-    "Azure-OpenAI",
-    "OpenRouter",
-}
-SPRIXIN_CHAT_ID = f"{SPRIXIN_CHAT_MODEL}@{SPRIXIN_CHAT_INSTANCE}@{SPRIXIN_PROVIDER_NAME}"
-SPRIXIN_EMBEDDING_ID = f"{SPRIXIN_EMBEDDING_MODEL}@{SPRIXIN_EMBEDDING_INSTANCE}@{SPRIXIN_PROVIDER_NAME}"
-SPRIXIN_RERANK_ID = f"{SPRIXIN_RERANK_MODEL}@{SPRIXIN_RERANK_INSTANCE}@{SPRIXIN_PROVIDER_NAME}"
 
 
 class DefaultContractModelPolicyRepository:

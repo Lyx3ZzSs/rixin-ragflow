@@ -4,7 +4,13 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from api.apps.services.contract_screening_model_policy import (
+from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.tenant_model_instance_service import TenantModelInstanceService
+from api.db.services.tenant_model_provider_service import TenantModelProviderService
+from api.db.services.tenant_model_service import TenantModelService
+from api.db.services.user_service import TenantService
+from common.constants import LLMType
+from common.contract_agent_internal_models import (
     SPRIXIN_CHAT_BASE_URL,
     SPRIXIN_CHAT_ID,
     SPRIXIN_CHAT_INSTANCE,
@@ -19,12 +25,6 @@ from api.apps.services.contract_screening_model_policy import (
     SPRIXIN_RERANK_INSTANCE,
     SPRIXIN_RERANK_MODEL,
 )
-from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.tenant_model_instance_service import TenantModelInstanceService
-from api.db.services.tenant_model_provider_service import TenantModelProviderService
-from api.db.services.tenant_model_service import TenantModelService
-from api.db.services.user_service import TenantService
-from common.constants import LLMType
 
 
 @dataclass(frozen=True)
@@ -46,12 +46,13 @@ class DefaultInternalModelMigrationRepository:
         return TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_id, instance_name)
 
     def create_instance(self, provider_id: str, instance_name: str, api_key: str, extra: str) -> Any:
-        return TenantModelInstanceService.create_instance(
+        TenantModelInstanceService.create_instance(
             provider_id=provider_id,
             instance_name=instance_name,
             api_key=api_key,
             extra=extra,
         )
+        return TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_id, instance_name)
 
     def get_model(self, provider_id: str, instance_id: str, model_type: str, model_name: str) -> Any:
         return TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(

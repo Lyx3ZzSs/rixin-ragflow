@@ -1,4 +1,4 @@
-from api.apps.services.contract_screening_internal_model_migration import (
+from api.db.joint_services.contract_screening_internal_model_migration import (
     SPRIXIN_CHAT_ID,
     SPRIXIN_EMBEDDING_ID,
     SPRIXIN_RERANK_ID,
