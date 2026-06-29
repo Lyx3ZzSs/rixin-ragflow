@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createScreeningExport, createScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask, listScreeningTasks, parseScreeningPrompt, submitScreeningFeedback } from "./api.js";
+import { createScreeningExport, createScreeningTask, deleteScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask, listScreeningTasks, logout, parseScreeningPrompt, submitScreeningFeedback } from "./api.js";
 import { buildConditionTaskPayload, conditionToEditor, normalizeEvidencePolicy, normalizeParsedConditions } from "./conditions.js";
 import { contracts, promptExamples } from "./data.js";
 import {
@@ -130,6 +130,16 @@ function BrainIcon() {
   );
 }
 
+function LogoutIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16,17 21,12 16,7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  );
+}
+
 /* ─── Header ─────────────────────────────────────────────────────── */
 
 function Header({ historyOpen, evidenceOpen, onToggleHistory, onToggleEvidence }) {
@@ -174,9 +184,26 @@ function Header({ historyOpen, evidenceOpen, onToggleHistory, onToggleEvidence }
 
 /* ─── Conversation History Panel (left) ───────────────────────────── */
 
-function ConversationHistory({ conversations, activeId, onSelect, onNew, onDelete }) {
+function ConversationHistory({ conversations, activeId, onSelect, onNew, onDelete, onLogout }) {
   return (
     <div className="history-panel">
+      <div className="sidebar-brand">
+        <button className="sidebar-menu" type="button" aria-label="展开或收起导航">
+          <HistoryIcon />
+        </button>
+        <span>合同智能筛选</span>
+      </div>
+      <nav className="sidebar-nav" aria-label="工作台导航">
+        <button className="sidebar-nav-item" type="button" onClick={onNew}>
+          <NewChatIcon /> 新建筛选
+        </button>
+        <button className="sidebar-nav-item" type="button">
+          <SearchIcon /> 搜索历史
+        </button>
+        <button className="sidebar-nav-item" type="button">
+          <DocumentIcon /> 合同库
+        </button>
+      </nav>
       <div className="history-header">
         <div>
           <p className="meta">对话历史</p>
@@ -184,9 +211,6 @@ function ConversationHistory({ conversations, activeId, onSelect, onNew, onDelet
             历史会话
           </h3>
         </div>
-        <button className="btn btn-secondary btn-small" type="button" onClick={onNew}>
-          <NewChatIcon /> 新建
-        </button>
       </div>
       <div className="history-list" role="listbox" aria-label="历史会话列表">
         {conversations.length === 0 ? (
@@ -216,6 +240,11 @@ function ConversationHistory({ conversations, activeId, onSelect, onNew, onDelet
             </button>
           ))
         )}
+      </div>
+      <div className="sidebar-footer">
+        <button className="btn btn-secondary btn-small" type="button" onClick={onLogout}>
+          <LogoutIcon /> 注销
+        </button>
       </div>
     </div>
   );
@@ -371,73 +400,6 @@ function KeyValue({ label, value }) {
   );
 }
 
-function ConditionReview({ review, onConditionChange, onEvidencePolicyChange, onConfirm, onCancel }) {
-  if (!review) return null;
-
-  return (
-    <div className="condition-review">
-      <div className="condition-review-head">
-        <div>
-          <p className="meta">条件确认</p>
-          <strong>确认后开始筛选</strong>
-        </div>
-        <button className="btn btn-secondary btn-small" type="button" onClick={onCancel}>
-          取消
-        </button>
-      </div>
-      <div className="condition-list">
-        {review.conditions.map((condition, index) => (
-          <div className="condition-row" key={condition.id || index}>
-            <label className="condition-toggle">
-              <input
-                type="checkbox"
-                checked={condition.enabled}
-                onChange={(event) => onConditionChange(index, "enabled", event.target.checked)}
-              />
-              <span>{condition.label}</span>
-            </label>
-            <input
-              className="condition-input"
-              value={condition.keywordsText}
-              onChange={(event) => onConditionChange(index, "keywordsText", event.target.value)}
-              aria-label={`${condition.label}关键词`}
-            />
-            <div className="condition-fields">
-              <input
-                className="condition-value"
-                value={condition.operator}
-                onChange={(event) => onConditionChange(index, "operator", event.target.value)}
-                aria-label={`${condition.label}操作符`}
-              />
-              <input
-                className="condition-value"
-                value={condition.value}
-                onChange={(event) => onConditionChange(index, "value", event.target.value)}
-                aria-label={`${condition.label}取值`}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="condition-footer">
-        <label>
-          每份合同证据数
-          <input
-            type="number"
-            min="1"
-            max="20"
-            value={review.evidencePolicy.max_evidence_per_contract}
-            onChange={(event) => onEvidencePolicyChange("max_evidence_per_contract", event.target.value)}
-          />
-        </label>
-        <button className="btn btn-primary btn-small" type="button" onClick={onConfirm}>
-          开始筛选
-        </button>
-      </div>
-    </div>
-  );
-}
-
 /* ─── Chat View (middle) ─────────────────────────────────────────── */
 
 function ChatView({
@@ -456,11 +418,6 @@ function ChatView({
   onKnowledgeBaseChange,
   isKnowledgeBaseLoading,
   knowledgeBaseError,
-  pendingConditionReview,
-  onConditionChange,
-  onEvidencePolicyChange,
-  onConfirmConditions,
-  onCancelConditions,
   onCreateExport
 }) {
   const bodyRef = useRef(null);
@@ -474,7 +431,7 @@ function ChatView({
 
   function handleSend() {
     const trimmed = inputValue.trim();
-    if (!trimmed || isStreaming || pendingConditionReview || !selectedKnowledgeBaseId) return;
+    if (!trimmed || isStreaming || !selectedKnowledgeBaseId) return;
     onSend(trimmed);
     setInputValue("");
   }
@@ -491,30 +448,9 @@ function ChatView({
       {messages.length === 0 ? (
         <div className="welcome-center">
           <div className="welcome-card">
-            <div className="welcome-icon">
-              <AgentIcon />
-            </div>
             <h1 className="welcome-title">
-              合同智能筛选 Agent
+              要筛选哪些合同？
             </h1>
-            <p className="welcome-lead">
-              用自然语言描述你的筛选目标，Agent 将自动生成检索策略、排序结果并提供可追溯的证据链。
-            </p>
-            <div className="welcome-prompts">
-              {promptExamples.map((prompt) => (
-                <button
-                  className="btn btn-secondary btn-small"
-                  key={prompt}
-                  type="button"
-                  onClick={() => {
-                    setInputValue(prompt);
-                    setTimeout(() => inputRef.current?.focus(), 0);
-                  }}
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       ) : (
@@ -559,13 +495,6 @@ function ChatView({
 
       {/* Chat input bar */}
       <div className="chat-input-bar">
-        <ConditionReview
-          review={pendingConditionReview}
-          onConditionChange={onConditionChange}
-          onEvidencePolicyChange={onEvidencePolicyChange}
-          onConfirm={onConfirmConditions}
-          onCancel={onCancelConditions}
-        />
         <div className="kb-toolbar">
           <label className="kb-selector">
             <span>知识库</span>
@@ -585,10 +514,13 @@ function ChatView({
             </select>
           </label>
           <span className={`kb-state${knowledgeBaseError ? " is-error" : ""}`}>
-            {knowledgeBaseError || (selectedKnowledgeBaseId ? "已连接当前知识库" : "选择知识库后开始筛选")}
+            {knowledgeBaseError ? "请选择知识库" : selectedKnowledgeBaseId ? "已连接当前知识库" : "选择知识库后开始筛选"}
           </span>
         </div>
         <div className="chat-input-row">
+          <button className="input-plus" type="button" aria-label="添加附件">
+            <NewChatIcon />
+          </button>
           <textarea
             ref={inputRef}
             className="chat-input"
@@ -597,16 +529,16 @@ function ChatView({
             onKeyDown={handleKeyDown}
             placeholder="描述你要找的合同，例如：筛出本季度到期的外包合同..."
             rows={1}
-            disabled={isStreaming || Boolean(pendingConditionReview)}
+            disabled={isStreaming}
           />
           <button
             className="chat-send"
             type="button"
             onClick={handleSend}
-            disabled={isStreaming || Boolean(pendingConditionReview) || !inputValue.trim() || !selectedKnowledgeBaseId}
+            disabled={isStreaming || !inputValue.trim() || !selectedKnowledgeBaseId}
             aria-label="发送消息"
           >
-            <SendIcon />
+            <SendIcon /> 发送
           </button>
         </div>
         <div className="chat-hints">
@@ -901,7 +833,7 @@ function createEmptyConversation() {
 }
 
 export default function App() {
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(true);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [evidenceItem, setEvidenceItem] = useState(null);
   const [inputValue, setInputValue] = useState("");
@@ -914,7 +846,6 @@ export default function App() {
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [knowledgeBaseLoading, setKnowledgeBaseLoading] = useState(false);
   const [knowledgeBaseError, setKnowledgeBaseError] = useState("");
-  const [pendingConditionReview, setPendingConditionReview] = useState(null);
 
   const [conversations, setConversations] = useState(() => buildInitialConversations());
   const [activeConversationId, setActiveConversationId] = useState("conv-1");
@@ -1020,6 +951,20 @@ export default function App() {
     scheduleTimer(() => setToast((current) => ({ ...current, visible: false })), 2000);
   }
 
+  async function handleLogout() {
+    try {
+      await logout();
+    } catch {
+      // Continue local sign-out even if the server session is already expired.
+    } finally {
+      window.localStorage?.removeItem("Authorization");
+      window.localStorage?.removeItem("token");
+      window.localStorage?.removeItem("userInfo");
+      window.localStorage?.removeItem("contract-agent-kb-id");
+      window.location.href = `${window.location.origin}/login`;
+    }
+  }
+
   function copyText(text, message) {
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(text).then(
@@ -1063,10 +1008,21 @@ export default function App() {
     scheduleTimer(() => inputRef.current?.focus(), 100);
   }
 
-  function deleteConversation(id) {
+  async function deleteConversation(id) {
     if (id === streamingConversationId) {
       showToast("筛选进行中，完成后再删除");
       return;
+    }
+
+    const conversation = conversations.find((item) => item.id === id);
+    if (conversation?.task_id) {
+      try {
+        await deleteScreeningTask(conversation.task_id);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error || "删除失败");
+        showToast(`删除失败：${message}`);
+        return;
+      }
     }
 
     const next = conversations.filter((c) => c.id !== id);
@@ -1306,31 +1262,6 @@ export default function App() {
     return null;
   }
 
-  function updatePendingCondition(index, field, value) {
-    setPendingConditionReview((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        conditions: current.conditions.map((condition, conditionIndex) =>
-          conditionIndex === index ? { ...condition, [field]: value } : condition
-        )
-      };
-    });
-  }
-
-  function updatePendingEvidencePolicy(field, value) {
-    setPendingConditionReview((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        evidencePolicy: normalizeEvidencePolicy({
-          ...current.evidencePolicy,
-          [field]: value
-        })
-      };
-    });
-  }
-
   async function runScreeningWithConditions(review) {
     if (!review || isStreaming) return;
 
@@ -1342,7 +1273,6 @@ export default function App() {
     const text = review.prompt;
     const runId = screeningRunRef.current + 1;
     screeningRunRef.current = runId;
-    setPendingConditionReview(null);
     setIsStreaming(true);
     setStreamingConversationId(conversationId);
     setStreamingPhases([{ key: "parse_prompt", label: taskPhaseToLabel("parse_prompt"), done: false }]);
@@ -1439,19 +1369,19 @@ export default function App() {
       const conditions = normalizeParsedConditions(parsed?.conditions).map(conditionToEditor);
       const evidencePolicy = normalizeEvidencePolicy(parsed?.evidence_policy);
       setStreamingPhases((prev) => prev.map((phase) => ({ ...phase, done: true })));
-      setPendingConditionReview({
+      appendMessagesToConversation(conversationId, [
+        {
+          id: nextMessageId(),
+          role: "agent",
+          content: conditions.length > 0 ? "已解析筛选条件，开始筛选。" : "未解析到明确条件，按原始描述开始筛选。"
+        }
+      ]);
+      await runScreeningWithConditions({
         conversationId,
         prompt: text,
         conditions,
         evidencePolicy
       });
-      appendMessagesToConversation(conversationId, [
-        {
-          id: nextMessageId(),
-          role: "agent",
-          content: conditions.length > 0 ? "已解析筛选条件，请确认后开始筛选。" : "未解析到明确条件，可直接开始筛选。"
-        }
-      ]);
     } catch (error) {
       if (!mountedRef.current) return;
       const message = error instanceof Error ? error.message : String(error || "条件解析失败");
@@ -1474,14 +1404,7 @@ export default function App() {
 
   return (
     <>
-      <Header
-        historyOpen={historyOpen}
-        evidenceOpen={evidenceOpen}
-        onToggleHistory={toggleHistory}
-        onToggleEvidence={toggleEvidence}
-      />
-
-      <main className="workspace" data-od-id="workspace">
+      <main className={`workspace${historyOpen ? "" : " history-collapsed"}`} data-od-id="workspace">
         {/* Left: Conversation History */}
         <div className={`chat-col${historyOpen ? "" : " collapsed"}`} aria-label="对话历史面板">
           <ConversationHistory
@@ -1490,11 +1413,36 @@ export default function App() {
             onSelect={selectConversation}
             onNew={newConversation}
             onDelete={deleteConversation}
+            onLogout={handleLogout}
           />
         </div>
 
         {/* Middle: Chat View */}
         <div className="main-col">
+          <div className="main-stage-header">
+            <button
+              className="sidebar-toggle"
+              type="button"
+              aria-label={historyOpen ? "收起历史面板" : "展开历史面板"}
+              aria-pressed={historyOpen}
+              onClick={toggleHistory}
+              title="对话历史"
+            >
+              <HistoryIcon />
+            </button>
+            <div className="main-header-actions">
+              <button
+                className="sidebar-toggle"
+                type="button"
+                aria-label={evidenceOpen ? "收起证据面板" : "展开证据面板"}
+                aria-pressed={evidenceOpen}
+                onClick={toggleEvidence}
+                title="证据详情"
+              >
+                <EyeIcon />
+              </button>
+            </div>
+          </div>
           <ChatView
             messages={messages}
             isStreaming={isStreaming}
@@ -1511,11 +1459,6 @@ export default function App() {
             onKnowledgeBaseChange={handleKnowledgeBaseChange}
             isKnowledgeBaseLoading={knowledgeBaseLoading}
             knowledgeBaseError={knowledgeBaseError}
-            pendingConditionReview={pendingConditionReview}
-            onConditionChange={updatePendingCondition}
-            onEvidencePolicyChange={updatePendingEvidencePolicy}
-            onConfirmConditions={() => runScreeningWithConditions(pendingConditionReview)}
-            onCancelConditions={() => setPendingConditionReview(null)}
             onCreateExport={handleCreateExport}
           />
         </div>

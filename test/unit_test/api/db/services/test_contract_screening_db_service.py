@@ -62,6 +62,51 @@ class _FakeTaskQuery:
         return self.rows
 
 
+class _FakeContext:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeDeleteQuery:
+    def __init__(self, model):
+        self.model = model
+
+    def where(self, *_conditions):
+        return self
+
+    def execute(self):
+        self.model.deleted += 1
+        return 1
+
+
+class _FakeInsertQuery:
+    def __init__(self, model, rows):
+        self.model = model
+        self.rows = rows
+
+    def execute(self):
+        self.model.inserted.extend(self.rows)
+        return len(self.rows)
+
+
+class _FakeScreeningModel:
+    tenant_id = _FakeField("tenant_id")
+    task_id = _FakeField("task_id")
+
+    def __init__(self):
+        self.deleted = 0
+        self.inserted = []
+
+    def delete(self):
+        return _FakeDeleteQuery(self)
+
+    def insert_many(self, rows):
+        return _FakeInsertQuery(self, rows)
+
+
 def test_list_tasks_filters_by_tenant_and_user(monkeypatch):
     rows = [
         {
@@ -114,6 +159,46 @@ def test_list_tasks_filters_by_tenant_and_user(monkeypatch):
     }]
     assert query.page == (1, 20)
     assert query.ordering == [("create_time", "desc")]
+
+
+def test_persist_completed_task_writes_records_inside_existing_transaction(monkeypatch):
+    result_model = _FakeScreeningModel()
+    evidence_model = _FakeScreeningModel()
+    monkeypatch.setattr(contract_screening_service.DB, "connection_context", lambda: _FakeContext())
+    monkeypatch.setattr(contract_screening_service.DB, "atomic", lambda: _FakeContext())
+    monkeypatch.setattr(contract_screening_service.ContractScreeningTaskService, "upsert_task", lambda _task: None)
+    monkeypatch.setattr(
+        contract_screening_service.ContractScreeningResultService,
+        "insert_many",
+        lambda _rows: (_ for _ in ()).throw(AssertionError("nested service insert_many must not be used")),
+    )
+    monkeypatch.setattr(
+        contract_screening_service.ContractScreeningEvidenceService,
+        "insert_many",
+        lambda _rows: (_ for _ in ()).throw(AssertionError("nested service insert_many must not be used")),
+    )
+    monkeypatch.setattr(contract_screening_service, "ContractScreeningResult", result_model)
+    monkeypatch.setattr(contract_screening_service, "ContractScreeningEvidence", evidence_model)
+
+    contract_screening_service.persist_completed_task({
+        "task_id": "task-1",
+        "tenant_id": "tenant-1",
+        "items": [{
+            "id": "result-1",
+            "contract_id": "doc-1",
+            "name": "采购合同.pdf",
+            "overall_status": "matched",
+            "meta": {"risk": "高", "score": 91},
+            "evidence": [{"chunk_id": "chunk-1", "text": "付款期限90天"}],
+        }],
+    })
+
+    assert result_model.deleted == 1
+    assert evidence_model.deleted == 1
+    assert len(result_model.inserted) == 1
+    assert len(evidence_model.inserted) == 1
+    assert result_model.inserted[0]["create_time"] == evidence_model.inserted[0]["create_time"]
+    assert result_model.inserted[0]["update_date"] == evidence_model.inserted[0]["update_date"]
 
 
 def test_result_and_evidence_payloads_preserve_frontend_shape():

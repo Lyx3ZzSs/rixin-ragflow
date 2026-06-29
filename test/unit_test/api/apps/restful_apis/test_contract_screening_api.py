@@ -96,6 +96,11 @@ def _load_api(monkeypatch):
 
     _stub(
         monkeypatch,
+        "quart",
+        request=SimpleNamespace(args={}),
+    )
+    _stub(
+        monkeypatch,
         "api.db.services.knowledgebase_service",
         KnowledgebaseService=SimpleNamespace(accessible=lambda **_kwargs: True),
     )
@@ -143,17 +148,24 @@ def _load_api(monkeypatch):
             "kwargs": kwargs,
         },
     )
-    _stub(
+    contract_screening_db_stub = _stub(
         monkeypatch,
         "api.db.services.contract_screening_service",
         ContractScreeningTaskService=SimpleNamespace(
             list_tasks=lambda **_kwargs: {"total": 0, "items": []},
+            delete_history_task=lambda **_kwargs: False,
         ),
         ContractScreeningExportService=SimpleNamespace(
             get_by_id=lambda _export_id: (False, None),
         ),
         build_results_payload=lambda _tenant_id, _task_id, user_id=None: None,
     )
+    db_services = _stub(
+        monkeypatch,
+        "api.db.services",
+        contract_screening_service=contract_screening_db_stub,
+    )
+    db_services.__path__ = [str(repo_root / "api" / "db" / "services")]
     _stub(
         monkeypatch,
         "api.utils.api_utils",
@@ -188,6 +200,7 @@ def _load_api(monkeypatch):
     module.contract_screening_db_service = SimpleNamespace(
         ContractScreeningTaskService=SimpleNamespace(
             list_tasks=lambda **_kwargs: {"total": 0, "items": []},
+            delete_history_task=lambda **_kwargs: False,
         ),
         ContractScreeningExportService=SimpleNamespace(
             get_by_id=lambda _export_id: (False, None),
@@ -267,6 +280,40 @@ def test_list_tasks_returns_current_user_history(monkeypatch):
             "items": [{"task_id": "task-1", "prompt": "筛选合同"}],
         },
     }
+
+
+def test_delete_task_soft_deletes_current_user_history(monkeypatch):
+    module = _load_api(monkeypatch)
+    calls = []
+    monkeypatch.setattr(module, "current_user", SimpleNamespace(id="user-1"))
+    monkeypatch.setattr(
+        module.contract_screening_db_service.ContractScreeningTaskService,
+        "delete_history_task",
+        lambda **kwargs: calls.append(kwargs) or True,
+    )
+
+    result = _run(module.delete_task("task-1", tenant_id="tenant-1"))
+
+    assert calls == [{
+        "tenant_id": "tenant-1",
+        "task_id": "task-1",
+        "user_id": "user-1",
+    }]
+    assert result == {"code": 0, "data": {"task_id": "task-1", "deleted": True}}
+
+
+def test_delete_task_returns_not_found_for_other_user_history(monkeypatch):
+    module = _load_api(monkeypatch)
+    monkeypatch.setattr(module, "current_user", SimpleNamespace(id="user-2"))
+    monkeypatch.setattr(
+        module.contract_screening_db_service.ContractScreeningTaskService,
+        "delete_history_task",
+        lambda **_kwargs: False,
+    )
+
+    result = _run(module.delete_task("task-1", tenant_id="tenant-1"))
+
+    assert result == {"code": 102, "message": "Task not found"}
 
 
 def test_create_task_saves_initial_task_and_starts_background(monkeypatch):

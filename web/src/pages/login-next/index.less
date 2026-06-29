@@ -1,78 +1,354 @@
-.mask-path {
-  stroke-width: 8;
-  ::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    inset-inline-start: 0;
+:root {
+  --login-paper: #f7f8f4;
+  --login-paper-soft: #ffffff;
+  --login-ink: #111111;
+  --login-muted: #5f665f;
+  --login-border: rgba(17, 17, 17, 0.14);
+  --login-energy: #0e7490;
+  --login-electric: #2563eb;
+  --login-amber: #c47a2c;
+}
+
+.login-next-page {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(17, 17, 17, 0.035) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(17, 17, 17, 0.035) 1px, transparent 1px),
+    linear-gradient(135deg, #f7f8f4 0%, #eef3f1 52%, #f4f0e6 100%);
+  background-size:
+    56px 56px,
+    56px 56px,
+    auto;
+  color: var(--login-ink);
+}
+
+.login-next-content {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(390px, 0.88fr);
+  align-items: center;
+  gap: 72px;
+  padding: 64px 72px;
+}
+
+.login-next-brand {
+  max-width: 720px;
+}
+
+.login-next-kicker,
+.login-next-eyebrow {
+  display: inline-flex;
+  color: var(--login-energy);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.login-next-brand h1 {
+  max-width: 680px;
+  margin: 18px 0 0;
+  color: var(--login-ink);
+  font-size: 72px;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 0.98;
+}
+
+.login-next-brand p {
+  max-width: 560px;
+  margin-top: 24px;
+  color: var(--login-muted);
+  font-size: 18px;
+  line-height: 1.7;
+}
+
+.login-next-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 32px;
+}
+
+.login-next-capabilities span {
+  border: 1px solid var(--login-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 8px 12px;
+  color: var(--login-ink);
+  font-size: 13px;
+}
+
+.login-next-panel {
+  justify-self: end;
+  width: min(100%, 460px);
+}
+
+.login-next-form-wrap {
+  width: 100%;
+}
+
+.login-next-form-heading {
+  margin-bottom: 22px;
+}
+
+.login-next-form-heading .login-next-eyebrow {
+  margin-top: 0;
+}
+
+.login-next-form-title {
+  margin-top: 10px;
+  color: var(--login-ink);
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.login-next-form-subtitle {
+  margin-top: 8px;
+  color: var(--login-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.login-next-form-card {
+  width: 100%;
+  border: 1px solid var(--login-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 24px 70px rgba(17, 17, 17, 0.13);
+  padding: 32px;
+  backdrop-filter: blur(18px);
+}
+
+.login-next-form-card form {
+  gap: 26px;
+}
+
+.login-next-form-card input {
+  min-height: 44px;
+  border-color: var(--login-border);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--login-ink);
+}
+
+.login-next-form-card input:focus-visible {
+  border-color: var(--login-energy);
+  box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.14);
+}
+
+.login-next-submit {
+  width: 100%;
+  min-height: 46px;
+  margin: 28px 0 8px;
+  border: 0;
+  border-bottom: 2px solid var(--login-energy);
+  border-radius: 8px;
+  background: var(--login-ink);
+  color: #ffffff;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.login-next-submit:hover {
+  transform: translateY(-1px);
+  background: #1d1d1d;
+  border-bottom-color: var(--login-electric);
+}
+
+.login-blueprint-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+.login-blueprint-bg__svg {
+  width: 100%;
+  height: 100%;
+}
+
+.blueprint-grid,
+.blueprint-line,
+.blueprint-document,
+.blueprint-document-detail {
+  fill: none;
+  stroke: rgba(17, 17, 17, 0.14);
+  stroke-width: 1;
+}
+
+.blueprint-grid {
+  stroke: rgba(17, 17, 17, 0.045);
+}
+
+.blueprint-line {
+  stroke: url('#blueprintLine');
+  stroke-dasharray: 90 520;
+  animation: blueprint-flow 16s linear infinite;
+}
+
+.blueprint-line--slow {
+  animation-duration: 22s;
+}
+
+.blueprint-line--faint {
+  stroke: rgba(17, 17, 17, 0.08);
+  stroke-dasharray: none;
+  animation: none;
+}
+
+.blueprint-document {
+  stroke: rgba(14, 116, 144, 0.22);
+}
+
+.blueprint-document-detail {
+  stroke: rgba(196, 122, 44, 0.34);
+}
+
+.blueprint-node {
+  fill: var(--login-energy);
+  opacity: 0.5;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: blueprint-pulse 3.8s ease-in-out infinite;
+}
+
+.blueprint-node--two {
+  animation-delay: 900ms;
+}
+
+.blueprint-node--three {
+  animation-delay: 1600ms;
+}
+
+.is-paused .blueprint-line,
+.is-paused .blueprint-node {
+  animation-play-state: paused;
+}
+
+@keyframes blueprint-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -610;
+  }
+}
+
+@keyframes blueprint-pulse {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.28);
+  }
+}
+
+@media (max-width: 900px) {
+  .login-next-content {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    padding: 28px;
+    align-items: start;
+  }
+
+  .login-next-brand h1 {
+    font-size: 48px;
+  }
+
+  .login-next-panel {
+    justify-self: stretch;
     width: 100%;
-    height: 100%;
-    stroke-dasharray: 660;
-    stroke-dashoffset: 0;
-    stroke: #d11818;
-    stroke-width: 8;
-    fill: none;
-  }
-}
-@keyframes glow {
-  0% {
-    stroke-dashoffset: 0;
-  }
-  100% {
-    stroke-dashoffset: -650;
   }
 }
 
-@keyframes highlight-flow {
-  0% {
-    stroke-dashoffset: 50;
+@media (max-width: 560px) {
+  .login-next-content {
+    padding: 22px;
   }
-  100% {
-    stroke-dashoffset: -600;
-  } /* 15+300-30=285 */
-}
-.animate-glow {
-  animation: glow 16s infinite linear;
-}
-.animate-highlight {
-  animation: highlight-flow 16s linear infinite;
+
+  .login-next-brand h1 {
+    margin-top: 10px;
+    font-size: 34px;
+    line-height: 1.05;
+  }
+
+  .login-next-brand p {
+    margin-top: 14px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .login-next-kicker {
+    margin-top: 0;
+  }
+
+  .login-next-capabilities {
+    margin-top: 16px;
+    gap: 8px;
+  }
+
+  .login-next-capabilities span {
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+
+  .login-next-form-card {
+    padding: 22px;
+  }
 }
 
-.paused {
-  .animate-glow,
-  .animate-highlight {
-    animation-play-state: paused;
+@media (prefers-reduced-motion: reduce) {
+  .blueprint-line,
+  .blueprint-node {
+    animation: none !important;
   }
 }
 
-//////////////////////////////////////////////////////////////////////////
 .perspective-1000 {
   perspective: 1000px;
   -webkit-perspective: 1000px;
   overflow: hidden;
-  min-height: 680px;
+  min-height: 620px;
   display: flex;
   align-items: center;
   will-change: transform;
 }
+
 .transform-style-3d {
   transform-style: preserve-3d;
   -webkit-transform-style: preserve-3d;
   transition-duration: 0.4s;
   will-change: transform;
 }
+
 .backface-hidden {
   backface-visibility: hidden;
-  -webkit-backface-visibility: hidden; /* Chrome、Safari */
-  -moz-backface-visibility: hidden; /* Firefox */
-  -ms-backface-visibility: hidden; /* Internet Explorer */
+  -webkit-backface-visibility: hidden;
+  -moz-backface-visibility: hidden;
+  -ms-backface-visibility: hidden;
 }
 
 .rotate-y-180 {
   transform: rotateY(180deg);
   -webkit-transform: rotateY(180deg);
 }
+
 .rotate-y-0 {
   transform: rotateY(0deg);
   -webkit-transform: rotateY(0deg);
+}
+
+@media (max-width: 560px) {
+  .perspective-1000 {
+    min-height: 500px;
+  }
 }

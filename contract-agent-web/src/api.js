@@ -1,6 +1,7 @@
 const CONTRACT_SCREENING_BASE = "/api/v1/contract-screening/tasks";
 const CONTRACT_SCREENING_PARSE = "/api/v1/contract-screening/parse";
 const KNOWLEDGE_BASE_LIST = "/api/v1/datasets";
+const LOGOUT_URL = "/api/v1/auth/logout";
 
 export async function parseResponse(response) {
   let payload = {};
@@ -48,6 +49,15 @@ export async function createScreeningTask({ kbId, prompt, filters, conditions, e
 
 export async function getScreeningTask(taskId) {
   const response = await fetch(`${CONTRACT_SCREENING_BASE}/${taskId}`, {
+    credentials: "include"
+  });
+
+  return parseResponse(response);
+}
+
+export async function deleteScreeningTask(taskId) {
+  const response = await fetch(`${CONTRACT_SCREENING_BASE}/${taskId}`, {
+    method: "DELETE",
     credentials: "include"
   });
 
@@ -121,6 +131,17 @@ export async function getKnowledgeBases() {
       document_count: item?.document_count ?? item?.doc_num ?? item?.chunk_num ?? 0
     }))
     .filter((item) => item.id);
+}
+
+export async function logout() {
+  const authorization = window.localStorage?.getItem("Authorization");
+  const headers = authorization ? { Authorization: authorization } : undefined;
+
+  await fetch(LOGOUT_URL, {
+    method: "POST",
+    headers,
+    credentials: "include"
+  });
 }
 
 export async function listScreeningTasks({ page = 1, pageSize = 20, kbId = "" } = {}) {

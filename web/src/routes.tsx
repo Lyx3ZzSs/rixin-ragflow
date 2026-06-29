@@ -3,6 +3,7 @@ import {
   createBrowserRouter,
   Navigate,
   redirect,
+  redirectDocument,
   type RouteObject,
 } from 'react-router';
 import FallbackComponent from './components/fallback-component';
@@ -11,6 +12,7 @@ import authorizationUtil from './utils/authorization-util';
 
 export enum Routes {
   Root = '/',
+  Ragflow = '/ragflow',
   Login = '/login-next',
   Logout = '/logout',
   Home = '/home',
@@ -147,6 +149,17 @@ const routeConfigOptions = [
   },
   {
     path: Routes.Root,
+    loader: ({ request }: { request: Request }) => {
+      const url = new URL(request.url);
+      const auth = url.searchParams.get('auth');
+      if (auth) {
+        authorizationUtil.setAuthorization(auth);
+      }
+      return redirectDocument('/contract-agent/');
+    },
+  },
+  {
+    path: Routes.Ragflow,
     layout: false,
     Component: () => import('@/layouts/root-layout'),
     loader: ({ request }: { request: Request }) => {
@@ -161,7 +174,7 @@ const routeConfigOptions = [
     },
     children: [
       {
-        path: Routes.Root,
+        index: true,
         Component: () => import('@/pages/home'),
       },
     ],

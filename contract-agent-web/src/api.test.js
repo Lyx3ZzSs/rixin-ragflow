@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import {
   createScreeningExport,
   createScreeningTask,
+  deleteScreeningTask,
   getKnowledgeBases,
   getScreeningExport,
   getScreeningResults,
   listScreeningTasks,
+  logout,
   mapScreeningItemToContract,
   parseResponse,
   parseScreeningPrompt,
@@ -386,6 +388,43 @@ test("getKnowledgeBases maps dataset list responses for the selector", async () 
   }
 });
 
+test("logout posts to auth logout with stored authorization", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousWindow = globalThis.window;
+  const calls = [];
+
+  globalThis.window = {
+    localStorage: {
+      getItem(key) {
+        assert.equal(key, "Authorization");
+        return "Bearer test-token";
+      }
+    }
+  };
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return { ok: true, status: 200 };
+  };
+
+  try {
+    await logout();
+
+    assert.deepEqual(calls, [
+      {
+        url: "/api/v1/auth/logout",
+        options: {
+          method: "POST",
+          headers: { Authorization: "Bearer test-token" },
+          credentials: "include"
+        }
+      }
+    ]);
+  } finally {
+    globalThis.fetch = previousFetch;
+    globalThis.window = previousWindow;
+  }
+});
+
 test("listScreeningTasks fetches paged task history", async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
@@ -431,6 +470,31 @@ test("listScreeningTasks fetches paged task history", async () => {
         messages: []
       }
     ]);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("deleteScreeningTask deletes a persisted history task", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "/api/v1/contract-screening/tasks/task-1");
+    assert.deepEqual(options, {
+      method: "DELETE",
+      credentials: "include"
+    });
+
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { code: 0, data: { task_id: "task-1", deleted: true } };
+      }
+    };
+  };
+
+  try {
+    assert.deepEqual(await deleteScreeningTask("task-1"), { task_id: "task-1", deleted: true });
   } finally {
     globalThis.fetch = previousFetch;
   }

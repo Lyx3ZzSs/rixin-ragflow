@@ -140,6 +140,24 @@ async def get_task(task_id: str, tenant_id: str):
     })
 
 
+@manager.route("/contract-screening/tasks/<task_id>", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def delete_task(task_id: str, tenant_id: str):
+    try:
+        deleted = contract_screening_db_service.ContractScreeningTaskService.delete_history_task(
+            tenant_id=tenant_id,
+            task_id=task_id,
+            user_id=current_user.id,
+        )
+        if not deleted:
+            return get_error_data_result(message="Task not found")
+        return get_result(data={"task_id": task_id, "deleted": True})
+    except Exception:
+        logging.exception("failed to delete contract screening task")
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/contract-screening/tasks/<task_id>/results", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs

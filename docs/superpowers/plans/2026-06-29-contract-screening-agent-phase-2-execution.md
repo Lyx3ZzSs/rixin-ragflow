@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Deliver the phase 2 product loop for the contract screening agent: persisted user history, editable parsed conditions, Excel/Word export, result/evidence feedback, and hardening.
+**Goal:** Deliver the phase 2 product loop for the contract screening agent: persisted user history, automatic parsed conditions, Excel/Word export, result/evidence feedback, and hardening.
 
-**Architecture:** Keep Redis as the running-task status channel and add database-backed history, result, evidence, export, and feedback records as the durable source of truth. Extend the existing `contract_screening` API surface incrementally while keeping first-stage request compatibility. Keep `contract-agent-web/` independent and add focused frontend modules for API adapters, condition editing, export actions, and feedback controls.
+**Architecture:** Keep Redis as the running-task status channel and add database-backed history, result, evidence, export, and feedback records as the durable source of truth. Extend the existing `contract_screening` API surface incrementally while keeping first-stage request compatibility. Keep `contract-agent-web/` independent and add focused frontend modules for API adapters, condition normalization, export actions, and feedback controls.
 
 **Tech Stack:** Python 3.13, Peewee, Redis, existing RAGFlow API utilities, `openpyxl`, `python-docx`, React 18, Vite, Node test runner, `uv run pytest`, `npm test`.
 
@@ -15,7 +15,7 @@
 The phase 2 spec spans several independent subsystems. Execute it as five milestone plans instead of one oversized implementation pass:
 
 1. M1: durable task history, result, and evidence persistence.
-2. M2: Prompt parsing and editable conditions.
+2. M2: Prompt parsing and direct screening start.
 3. M3: Excel and Word export.
 4. M4: result and evidence feedback.
 5. M5: hardening, observability, and regression coverage.
@@ -108,7 +108,7 @@ Expected: first-stage frontend tests pass before phase 2 edits begin.
   - Cover condition defaults, disabled conditions, and evidence limit normalization.
 - Modify: `contract-agent-web/src/App.jsx`
   - Load history from backend.
-  - Show condition confirmation before task creation.
+  - Parse conditions after send and start screening directly without condition confirmation.
   - Show export actions for completed tasks.
   - Show result/evidence feedback controls.
 - Modify: `contract-agent-web/src/logic.js`
@@ -203,9 +203,9 @@ git add api/db/db_models.py api/db/services/contract_screening_service.py api/ap
 git commit -m "feat(contract-agent): persist screening history"
 ```
 
-## M2: Prompt Parsing and Editable Conditions
+## M2: Prompt Parsing and Direct Screening Start
 
-**Outcome:** Users can review and edit parsed conditions before creating a screening task.
+**Outcome:** Users click send once; the frontend parses the Prompt into structured conditions and immediately creates the screening task.
 
 - [ ] **Step 1: Write parser service tests**
 
@@ -248,7 +248,7 @@ Create `contract-agent-web/src/conditions.test.js` for:
 - missing conditions become an empty list,
 - disabled condition remains disabled,
 - `max_evidence_per_contract` clamps to an allowed range,
-- create payload preserves edited keywords and values.
+- create payload preserves parsed keywords and evidence policy values.
 
 Run:
 
@@ -258,9 +258,9 @@ cd contract-agent-web && npm test -- src/conditions.test.js
 
 Expected: FAIL until `conditions.js` exists.
 
-- [ ] **Step 5: Implement frontend condition editor flow**
+- [ ] **Step 5: Implement frontend direct-run condition flow**
 
-Create `contract-agent-web/src/conditions.js`. Update `api.js` with `parseScreeningPrompt()`. Update `App.jsx` so submit first parses, shows editable conditions, and only starts screening after user confirmation.
+Create `contract-agent-web/src/conditions.js`. Update `api.js` with `parseScreeningPrompt()`. Update `App.jsx` so submit first parses and then immediately starts screening with parsed conditions. Do not show a condition confirmation panel or require a second “开始筛选” click.
 
 - [ ] **Step 6: Verify M2**
 
@@ -279,7 +279,7 @@ Run:
 
 ```bash
 git add api/apps/services/contract_screening_parser_service.py api/apps/services/contract_screening_service.py api/apps/restful_apis/contract_screening_api.py test/unit_test/api/apps/services/test_contract_screening_parser_service.py test/unit_test/api/apps/services/test_contract_screening_service.py test/unit_test/api/apps/restful_apis/test_contract_screening_api.py contract-agent-web/src
-git commit -m "feat(contract-agent): edit parsed screening conditions"
+git commit -m "feat(contract-agent): parse screening conditions"
 ```
 
 ## M3: Excel and Word Export
@@ -446,8 +446,8 @@ Manual smoke flow:
 
 1. Open `/contract-agent/?kb_id=<kb_id>`.
 2. Submit a Prompt.
-3. Edit parsed conditions.
-4. Run screening.
+3. Confirm no condition confirmation panel appears.
+4. Confirm screening starts automatically.
 5. Refresh page.
 6. Reopen task from history.
 7. Open evidence panel.
@@ -473,7 +473,7 @@ Phase 2 is complete only when all gates pass:
 
 - [ ] User refreshes the page and still sees their own historical screening tasks.
 - [ ] Historical tasks reopen with result and evidence data intact.
-- [ ] User can edit parsed conditions before running screening.
+- [ ] User clicks send once and screening starts directly after Prompt parsing.
 - [ ] A completed task exports Excel.
 - [ ] A completed task exports Word.
 - [ ] User can submit result feedback.

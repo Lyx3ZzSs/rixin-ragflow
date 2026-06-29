@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from typing import Any
 
 from api.db.db_models import (
@@ -28,6 +29,7 @@ from api.db.db_models import (
 )
 from api.db.services.common_service import CommonService
 from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, datetime_format
 
 
 class ContractScreeningTaskService(CommonService):
@@ -49,6 +51,7 @@ class ContractScreeningTaskService(CommonService):
         query = cls.model.select().where(
             cls.model.tenant_id == tenant_id,
             cls.model.user_id == user_id,
+            cls.model.status != "deleted",
         )
         if kb_id:
             query = query.where(cls.model.kb_id == kb_id)
@@ -65,6 +68,7 @@ class ContractScreeningTaskService(CommonService):
         conditions = (cls.model.id == task_id) & (cls.model.tenant_id == tenant_id)
         if user_id:
             conditions = conditions & (cls.model.user_id == user_id)
+        conditions = conditions & (cls.model.status != "deleted")
         row = cls.model.get_or_none(conditions)
         return row.to_dict() if row else None
 
@@ -77,6 +81,29 @@ class ContractScreeningTaskService(CommonService):
             cls.update_by_id(record["id"], record)
             return
         cls.insert(**record)
+
+    @classmethod
+    @DB.connection_context()
+    def delete_history_task(cls, *, tenant_id: str, task_id: str, user_id: str) -> bool:
+        timestamp = current_timestamp()
+        cur_datetime = datetime_format(datetime.now())
+        updated = (
+            cls.model.update({
+                cls.model.status: "deleted",
+                cls.model.message: "已删除",
+                cls.model.error: "",
+                cls.model.update_time: timestamp,
+                cls.model.update_date: cur_datetime,
+            })
+            .where(
+                (cls.model.id == task_id)
+                & (cls.model.tenant_id == tenant_id)
+                & (cls.model.user_id == user_id)
+                & (cls.model.status != "deleted")
+            )
+            .execute()
+        )
+        return bool(updated)
 
 
 class ContractScreeningResultService(CommonService):
@@ -241,6 +268,14 @@ def persist_completed_task(task: dict[str, Any]) -> None:
             )
         )
 
+    current_ts = current_timestamp()
+    current_datetime = datetime_format(datetime.now())
+    for record in [*result_records, *evidence_records]:
+        record["create_time"] = current_ts
+        record["create_date"] = current_datetime
+        record["update_time"] = current_ts
+        record["update_date"] = current_datetime
+
     with DB.connection_context():
         with DB.atomic():
             ContractScreeningResult.delete().where(
@@ -252,9 +287,9 @@ def persist_completed_task(task: dict[str, Any]) -> None:
                 & (ContractScreeningEvidence.task_id == task_id)
             ).execute()
             if result_records:
-                ContractScreeningResultService.insert_many(result_records)
+                ContractScreeningResult.insert_many(result_records).execute()
             if evidence_records:
-                ContractScreeningEvidenceService.insert_many(evidence_records)
+                ContractScreeningEvidence.insert_many(evidence_records).execute()
 
 
 def build_results_payload(tenant_id: str, task_id: str, user_id: str | None = None) -> dict[str, Any] | None:

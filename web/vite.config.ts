@@ -55,6 +55,10 @@ export default defineConfig(({ mode }) => {
   proxyScheme = proxyScheme || 'python';
 
   console.log(`[vite.config] mode: ${mode}, API_PROXY_SCHEME: ${proxyScheme}`);
+  const contractAgentDevTarget =
+    env.CONTRACT_AGENT_DEV_TARGET ||
+    env.VITE_CONTRACT_AGENT_DEV_TARGET ||
+    'http://127.0.0.1:5173';
 
   const proxySchemes = {
     python: {
@@ -133,7 +137,14 @@ export default defineConfig(({ mode }) => {
     },
   };
 
-  const proxy = proxySchemes[proxyScheme] || proxySchemes.python;
+  const proxy = {
+    ...(proxySchemes[proxyScheme] || proxySchemes.python),
+    '/contract-agent': {
+      target: contractAgentDevTarget,
+      changeOrigin: true,
+      ws: true,
+    },
+  };
 
   return {
     define: {

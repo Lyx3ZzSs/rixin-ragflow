@@ -14,7 +14,9 @@ const NoFoundPage = () => {
       <Button
         onClick={() => {
           navigate(
-            location.pathname.startsWith(Routes.Admin) ? Routes.Admin : '/',
+            location.pathname.startsWith(Routes.Admin)
+              ? Routes.Admin
+              : Routes.Ragflow,
           );
         }}
       >
