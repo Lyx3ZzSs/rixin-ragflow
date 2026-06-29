@@ -22,6 +22,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from common.misc_utils import get_uuid
+from api.db.services import contract_screening_service as contract_screening_db_service
 from rag.utils.redis_conn import REDIS_CONN
 
 
@@ -421,6 +422,7 @@ async def run_screening_task(
     task_id: str,
     store: ContractScreeningStore | None = None,
     search_service: Any = None,
+    history_service: Any = contract_screening_db_service,
     heartbeat_seconds: float = TASK_HEARTBEAT_SECONDS,
 ) -> dict[str, Any]:
     store = store or ContractScreeningStore()
@@ -472,6 +474,7 @@ async def run_screening_task(
             "skipped": {"unparsed": 0},
             "error": "",
         })
+        history_service.persist_completed_task(task)
         save_task_or_raise(store, task)
         return task
     except Exception as exc:

@@ -77,6 +77,14 @@ class SlowSearchStub:
         return self.result
 
 
+class NoopHistoryService:
+    def __init__(self):
+        self.persisted = []
+
+    def persist_completed_task(self, task):
+        self.persisted.append(json.loads(json.dumps(task, ensure_ascii=False)))
+
+
 def test_validate_create_task_request_requires_kb_id():
     with pytest.raises(ContractScreeningError) as exc:
         validate_create_task_request({"prompt": "筛选付款周期超过60天的合同"})
@@ -141,7 +149,9 @@ def test_run_screening_task_retrieves_and_sorts_contract_results():
         ]
     })
 
-    task = asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=search))
+    history = NoopHistoryService()
+
+    task = asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=search, history_service=history))
 
     assert search.calls == [{
         "tenant_id": "tenant-1",
@@ -171,6 +181,7 @@ def test_run_screening_task_retrieves_and_sorts_contract_results():
     saved = store.get("tenant-1", "task-1")
     assert saved["status"] == "done"
     assert saved["items"][0]["contract_id"] == "doc-high"
+    assert history.persisted[0]["task_id"] == "task-1"
 
 
 def test_run_screening_task_heartbeats_while_waiting_for_search():
@@ -184,6 +195,7 @@ def test_run_screening_task_heartbeats_while_waiting_for_search():
             "task-1",
             store=store,
             search_service=SlowSearchStub({"chunks": []}),
+            history_service=NoopHistoryService(),
             heartbeat_seconds=0.001,
         )
     )
@@ -211,7 +223,7 @@ def test_run_screening_task_fails_fast_when_progress_save_fails():
     store.redis.values["contract_screening:tenant-1:task-1"] = json.dumps(task, ensure_ascii=False)
 
     with pytest.raises(ContractScreeningError) as exc:
-        asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=SearchDatasetsStub({"chunks": []})))
+        asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=SearchDatasetsStub({"chunks": []}), history_service=NoopHistoryService()))
 
     assert exc.value.message == "Failed to persist contract screening task"
 
@@ -258,7 +270,7 @@ def test_run_screening_task_marks_task_failed_when_search_fails():
     search = SearchDatasetsStub((False, "retrieval unavailable"))
 
     with pytest.raises(ContractScreeningError) as exc:
-        asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=search))
+        asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=search, history_service=NoopHistoryService()))
 
     assert "retrieval unavailable" in exc.value.message
     saved = store.get("tenant-1", "task-1")
@@ -283,7 +295,7 @@ def test_run_screening_task_uses_search_method_when_search_datasets_missing():
         ]
     }))
 
-    task = asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=search))
+    task = asyncio.run(run_screening_task("tenant-1", "task-1", store=store, search_service=search, history_service=NoopHistoryService()))
 
     assert search.calls[0]["dataset_id"] == "kb-1"
     assert search.calls[0]["tenant_id"] == "tenant-1"

@@ -974,6 +974,116 @@ class Task(DataBaseModel):
     chunk_ids = LongTextField(null=True, help_text="chunk ids", default="")
 
 
+class ContractScreeningTask(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    user_id = CharField(max_length=32, null=False, index=True)
+    kb_id = CharField(max_length=32, null=False, index=True)
+    prompt = TextField(null=False, help_text="original screening prompt")
+    filters = JSONField(null=True, default={})
+    parsed_conditions = JSONField(null=True, default={})
+    edited_conditions = JSONField(null=True, default={})
+    evidence_policy = JSONField(null=True, default={})
+    status = CharField(max_length=32, null=False, default="pending", index=True)
+    phase = CharField(max_length=64, null=False, default="parse_prompt", index=True)
+    progress = FloatField(default=0)
+    message = TextField(null=True, default="")
+    error = TextField(null=True, default="")
+    item_count = IntegerField(default=0, index=True)
+    skipped = JSONField(null=True, default={})
+    finished_at = BigIntegerField(null=True, index=True)
+
+    class Meta:
+        db_table = "contract_screening_task"
+        indexes = (
+            (("tenant_id", "user_id", "create_time"), False),
+            (("tenant_id", "kb_id", "create_time"), False),
+            (("tenant_id", "status", "update_time"), False),
+        )
+
+
+class ContractScreeningResult(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    task_id = CharField(max_length=32, null=False, index=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    document_id = CharField(max_length=32, null=False, index=True)
+    title = CharField(max_length=512, null=False, default="")
+    status = CharField(max_length=32, null=False, default="", index=True)
+    risk = CharField(max_length=32, null=True, default="", index=True)
+    score = FloatField(default=0, index=True)
+    reason = TextField(null=True, default="")
+    meta = JSONField(null=True, default={})
+    matched_conditions = JSONField(null=True, default=[])
+    actions = JSONField(null=True, default=[])
+    timeline = JSONField(null=True, default=[])
+
+    class Meta:
+        db_table = "contract_screening_result"
+        indexes = (
+            (("tenant_id", "task_id", "score"), False),
+            (("tenant_id", "document_id", "create_time"), False),
+        )
+
+
+class ContractScreeningEvidence(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    task_id = CharField(max_length=32, null=False, index=True)
+    result_id = CharField(max_length=32, null=False, index=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    document_id = CharField(max_length=32, null=False, index=True)
+    chunk_id = CharField(max_length=64, null=True, default="", index=True)
+    source = CharField(max_length=128, null=False, default="合同正文")
+    ref = CharField(max_length=255, null=True, default="")
+    page = IntegerField(null=True)
+    text = LongTextField(null=True, help_text="evidence text")
+    score = FloatField(null=True)
+    condition_id = CharField(max_length=64, null=True, default="", index=True)
+
+    class Meta:
+        db_table = "contract_screening_evidence"
+        indexes = (
+            (("tenant_id", "task_id", "result_id"), False),
+            (("tenant_id", "chunk_id"), False),
+        )
+
+
+class ContractScreeningExport(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    task_id = CharField(max_length=32, null=False, index=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    user_id = CharField(max_length=32, null=False, index=True)
+    format = CharField(max_length=16, null=False, index=True)
+    status = CharField(max_length=32, null=False, default="pending", index=True)
+    file_name = CharField(max_length=512, null=True, default="")
+    file_key = CharField(max_length=1024, null=True, default="")
+    error = TextField(null=True, default="")
+
+    class Meta:
+        db_table = "contract_screening_export"
+        indexes = (
+            (("tenant_id", "task_id", "create_time"), False),
+            (("tenant_id", "user_id", "create_time"), False),
+        )
+
+
+class ContractScreeningFeedback(DataBaseModel):
+    id = CharField(max_length=32, primary_key=True)
+    task_id = CharField(max_length=32, null=False, index=True)
+    result_id = CharField(max_length=32, null=True, default="", index=True)
+    evidence_id = CharField(max_length=32, null=True, default="", index=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    user_id = CharField(max_length=32, null=False, index=True)
+    feedback_type = CharField(max_length=64, null=False, index=True)
+    comment = TextField(null=True, default="")
+
+    class Meta:
+        db_table = "contract_screening_feedback"
+        indexes = (
+            (("tenant_id", "task_id", "create_time"), False),
+            (("tenant_id", "user_id", "create_time"), False),
+        )
+
+
 class Dialog(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     tenant_id = CharField(max_length=32, null=False, index=True)

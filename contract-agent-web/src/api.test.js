@@ -5,6 +5,7 @@ import {
   getKnowledgeBases,
   getScreeningResults,
   mapScreeningItemToContract,
+  listScreeningTasks,
   parseResponse
 } from "./api.js";
 
@@ -209,6 +210,56 @@ test("getKnowledgeBases maps dataset list responses for the selector", async () 
     assert.deepEqual(await getKnowledgeBases(), [
       { id: "kb-1", name: "合同知识库", document_count: 12 },
       { id: "kb-2", name: "历史合同", document_count: 4 }
+    ]);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("listScreeningTasks fetches paged task history", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "/api/v1/contract-screening/tasks?page=2&page_size=10&kb_id=kb-1");
+    assert.deepEqual(options, { credentials: "include" });
+
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          code: 0,
+          data: {
+            total: 1,
+            items: [
+              {
+                task_id: "task-1",
+                prompt: "筛选高风险合同",
+                status: "done",
+                item_count: 3,
+                created_at: 1782720000
+              }
+            ]
+          }
+        };
+      }
+    };
+  };
+
+  try {
+    const data = await listScreeningTasks({ page: 2, pageSize: 10, kbId: "kb-1" });
+
+    assert.equal(data.total, 1);
+    assert.deepEqual(data.items, [
+      {
+        id: "task-1",
+        task_id: "task-1",
+        title: "筛选高风险合同",
+        prompt: "筛选高风险合同",
+        status: "done",
+        item_count: 3,
+        time: "1782720000",
+        messages: []
+      }
     ]);
   } finally {
     globalThis.fetch = previousFetch;

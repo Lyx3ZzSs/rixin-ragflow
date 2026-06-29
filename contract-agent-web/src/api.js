@@ -69,6 +69,42 @@ export async function getKnowledgeBases() {
     .filter((item) => item.id);
 }
 
+export async function listScreeningTasks({ page = 1, pageSize = 20, kbId = "" } = {}) {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize)
+  });
+  if (kbId) {
+    params.set("kb_id", kbId);
+  }
+  const response = await fetch(`${CONTRACT_SCREENING_BASE}?${params.toString()}`, {
+    credentials: "include"
+  });
+  const data = await parseResponse(response);
+  const items = Array.isArray(data?.items) ? data.items : [];
+
+  return {
+    total: Number(data?.total || 0),
+    items: items.map(mapScreeningTaskToConversation)
+  };
+}
+
+export function mapScreeningTaskToConversation(item) {
+  const taskId = item?.task_id || item?.id;
+  const prompt = item?.prompt || "历史筛选任务";
+
+  return {
+    id: taskId,
+    task_id: taskId,
+    title: prompt,
+    prompt,
+    status: item?.status || "",
+    item_count: item?.item_count || 0,
+    time: String(item?.created_at || item?.updated_at || ""),
+    messages: []
+  };
+}
+
 export function mapScreeningItemToContract(item) {
   if (isFrontendContract(item)) {
     return item;

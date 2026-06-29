@@ -17,6 +17,8 @@
 import asyncio
 import logging
 
+from quart import request
+
 from api.apps import current_user, login_required
 from api.apps.services.contract_screening_service import (
     ContractScreeningError,
@@ -28,6 +30,7 @@ from api.apps.services.contract_screening_service import (
     save_task_or_raise,
     validate_create_task_request,
 )
+from api.db.services import contract_screening_service as contract_screening_db_service
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
@@ -39,6 +42,27 @@ from api.utils.api_utils import (
 
 
 _background_tasks: set[asyncio.Task] = set()
+
+
+@manager.route("/contract-screening/tasks", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def list_tasks(tenant_id: str):
+    try:
+        page = int(request.args.get("page", 1))
+        page_size = int(request.args.get("page_size", 20))
+        kb_id = (request.args.get("kb_id") or "").strip() or None
+        data = contract_screening_db_service.ContractScreeningTaskService.list_tasks(
+            tenant_id=tenant_id,
+            user_id=current_user.id,
+            page=page,
+            page_size=page_size,
+            kb_id=kb_id,
+        )
+        return get_result(data=data)
+    except Exception:
+        logging.exception("failed to list contract screening tasks")
+        return get_error_data_result(message="Internal server error")
 
 
 @manager.route("/contract-screening/tasks", methods=["POST"])  # noqa: F821
@@ -101,6 +125,10 @@ async def get_results(task_id: str, tenant_id: str):
         return get_error_data_result(message=exc.message)
     if not task:
         return get_error_data_result(message="Task not found")
+
+    persisted = contract_screening_db_service.build_results_payload(tenant_id, task_id)
+    if persisted:
+        return get_result(data=persisted)
 
     strategy = task.get("strategy")
     if not isinstance(strategy, dict):

@@ -99,9 +99,19 @@ def _load_api(monkeypatch):
         ContractScreeningError=ContractScreeningError,
         ContractScreeningStore=FakeStore,
         create_initial_task=create_initial_task,
+        mark_stale_task_failed=lambda _task: False,
         new_task_id=lambda: "generated-task-id",
         run_screening_task=lambda *_args, **_kwargs: None,
+        save_task_or_raise=lambda _store, _task: None,
         validate_create_task_request=validate_create_task_request,
+    )
+    _stub(
+        monkeypatch,
+        "api.db.services.contract_screening_service",
+        ContractScreeningTaskService=SimpleNamespace(
+            list_tasks=lambda **_kwargs: {"total": 0, "items": []},
+        ),
+        build_results_payload=lambda _tenant_id, _task_id: None,
     )
     _stub(
         monkeypatch,
@@ -134,11 +144,54 @@ def _load_api(monkeypatch):
     module.manager = _PassthroughManager()
     monkeypatch.setitem(sys.modules, "test_contract_screening_api_module", module)
     spec.loader.exec_module(module)
+    module.contract_screening_db_service = SimpleNamespace(
+        ContractScreeningTaskService=SimpleNamespace(
+            list_tasks=lambda **_kwargs: {"total": 0, "items": []},
+        ),
+        build_results_payload=lambda _tenant_id, _task_id: None,
+    )
     return module
 
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def test_list_tasks_returns_current_user_history(monkeypatch):
+    module = _load_api(monkeypatch)
+    calls = []
+
+    module.request = SimpleNamespace(args={
+        "page": "2",
+        "page_size": "10",
+        "kb_id": "kb-1",
+    })
+    monkeypatch.setattr(module, "current_user", SimpleNamespace(id="user-1"))
+    monkeypatch.setattr(
+        module.contract_screening_db_service.ContractScreeningTaskService,
+        "list_tasks",
+        lambda **kwargs: calls.append(kwargs) or {
+            "total": 1,
+            "items": [{"task_id": "task-1", "prompt": "筛选合同"}],
+        },
+    )
+
+    result = _run(module.list_tasks(tenant_id="tenant-1"))
+
+    assert calls == [{
+        "tenant_id": "tenant-1",
+        "user_id": "user-1",
+        "page": 2,
+        "page_size": 10,
+        "kb_id": "kb-1",
+    }]
+    assert result == {
+        "code": 0,
+        "data": {
+            "total": 1,
+            "items": [{"task_id": "task-1", "prompt": "筛选合同"}],
+        },
+    }
 
 
 def test_create_task_saves_initial_task_and_starts_background(monkeypatch):

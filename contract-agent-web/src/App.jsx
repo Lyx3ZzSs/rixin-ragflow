@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask } from "./api.js";
+import { createScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask, listScreeningTasks } from "./api.js";
 import { contracts, promptExamples } from "./data.js";
 import {
   buildAuditText,
@@ -868,6 +868,26 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    listScreeningTasks({ page: 1, pageSize: 20, kbId: selectedKnowledgeBaseId })
+      .then((history) => {
+        if (cancelled || !mountedRef.current) return;
+        const items = Array.isArray(history?.items) ? history.items : [];
+        if (items.length === 0) return;
+        setConversations(items);
+        setActiveConversationId((current) => (items.some((item) => item.id === current) ? current : items[0].id));
+      })
+      .catch(() => {
+        // Keep first-stage local starter conversations when history is unavailable.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedKnowledgeBaseId]);
+
   /* ─── Actions ─────────────────────────────────────────────────── */
 
   function scheduleTimer(callback, delay) {
@@ -957,12 +977,63 @@ export default function App() {
     showToast("已删除会话");
   }
 
+  async function loadHistoricalConversation(conversation) {
+    const taskId = conversation?.task_id;
+    if (!taskId || (conversation.messages || []).length > 0) {
+      return;
+    }
+
+    try {
+      const result = await getScreeningResults(taskId);
+      if (!mountedRef.current) return;
+      const items = Array.isArray(result?.items) ? result.items : [];
+      const messages = [
+        {
+          id: `${taskId}-prompt`,
+          role: "user",
+          content: result?.prompt || conversation.prompt || conversation.title
+        },
+        {
+          id: `${taskId}-result`,
+          role: "agent",
+          content: items.length > 0 ? `筛选完成，命中 ${items.length} 份合同。` : "筛选完成，没有命中合同。",
+          strategy: result?.strategy,
+          results: items
+        }
+      ];
+      setConversations((prev) =>
+        prev.map((item) => (item.id === conversation.id ? { ...item, messages } : item))
+      );
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const message = error instanceof Error ? error.message : String(error || "历史任务加载失败");
+      setConversations((prev) =>
+        prev.map((item) =>
+          item.id === conversation.id
+            ? {
+                ...item,
+                messages: [
+                  {
+                    id: `${taskId}-load-error`,
+                    role: "agent",
+                    content: `历史任务加载失败：${message}`
+                  }
+                ]
+              }
+            : item
+        )
+      );
+    }
+  }
+
   function selectConversation(id) {
+    const conversation = conversations.find((item) => item.id === id);
     setActiveConversationId(id);
     setHistoryOpen(false);
     setEvidenceItem(null);
     setEvidenceOpen(false);
     setEvidenceToast("");
+    loadHistoricalConversation(conversation);
   }
 
   function handleQueueOne(item) {
