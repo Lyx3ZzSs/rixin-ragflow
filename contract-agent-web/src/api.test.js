@@ -1,15 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  createScreeningTask,
   createScreeningExport,
+  createScreeningTask,
   getKnowledgeBases,
   getScreeningExport,
   getScreeningResults,
-  mapScreeningItemToContract,
   listScreeningTasks,
+  mapScreeningItemToContract,
+  parseResponse,
   parseScreeningPrompt,
-  parseResponse
+  submitScreeningFeedback
 } from "./api.js";
 
 test("mapScreeningItemToContract preserves existing frontend contract shape", () => {
@@ -310,6 +311,43 @@ test("getScreeningExport fetches export metadata", async () => {
       export_id: "export-1",
       file_name: "result.xlsx"
     });
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("submitScreeningFeedback posts result feedback", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "/api/v1/contract-screening/tasks/task-1/feedback");
+    assert.equal(options.method, "POST");
+    assert.deepEqual(JSON.parse(options.body), {
+      result_id: "result-1",
+      evidence_id: "evidence-1",
+      feedback_type: "useful",
+      comment: "证据准确"
+    });
+
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { code: 0, data: { feedback_id: "feedback-1" } };
+      }
+    };
+  };
+
+  try {
+    assert.deepEqual(
+      await submitScreeningFeedback({
+        taskId: "task-1",
+        resultId: "result-1",
+        evidenceId: "evidence-1",
+        feedbackType: "useful",
+        comment: "证据准确"
+      }),
+      { feedback_id: "feedback-1" }
+    );
   } finally {
     globalThis.fetch = previousFetch;
   }

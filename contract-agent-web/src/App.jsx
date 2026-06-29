@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createScreeningExport, createScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask, listScreeningTasks, parseScreeningPrompt } from "./api.js";
+import { createScreeningExport, createScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask, listScreeningTasks, parseScreeningPrompt, submitScreeningFeedback } from "./api.js";
 import { buildConditionTaskPayload, conditionToEditor, normalizeEvidencePolicy, normalizeParsedConditions } from "./conditions.js";
 import { contracts, promptExamples } from "./data.js";
 import {
@@ -223,7 +223,7 @@ function ConversationHistory({ conversations, activeId, onSelect, onNew, onDelet
 
 /* ─── Evidence Panel (right) ──────────────────────────────────────── */
 
-function EvidencePanel({ item, onClose, onQueueOne, onCopyEvidence, toastMessage }) {
+function EvidencePanel({ item, onClose, onQueueOne, onCopyEvidence, onSubmitFeedback, toastMessage }) {
   if (!item) {
     return (
       <div className="evidence-panel">
@@ -338,6 +338,19 @@ function EvidencePanel({ item, onClose, onQueueOne, onCopyEvidence, toastMessage
           <button className="btn btn-secondary btn-small" type="button" onClick={() => onCopyEvidence(item)}>
             复制证据
           </button>
+          {item.taskId && (
+            <>
+              <button className="btn btn-secondary btn-small" type="button" onClick={() => onSubmitFeedback(item, "useful")}>
+                <CheckIcon /> 结果有用
+              </button>
+              <button className="btn btn-secondary btn-small" type="button" onClick={() => onSubmitFeedback(item, "missing_evidence")}>
+                <DocumentIcon /> 证据不足
+              </button>
+              <button className="btn btn-secondary btn-small" type="button" onClick={() => onSubmitFeedback(item, "not_relevant")}>
+                <SearchIcon /> 不相关
+              </button>
+            </>
+          )}
           {toastMessage && (
             <span style={{ fontSize: "var(--text-xs)", color: "var(--success)", display: "inline-flex", alignItems: "center", gap: "4px", marginLeft: "var(--space-2)" }}>
               <CheckIcon /> {toastMessage}
@@ -666,7 +679,7 @@ function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit, onCre
                     key={item.id || `${item.title}-${index}`}
                     className={`chat-result-card${viewingItemId === item.id ? " is-viewing" : ""}`}
                     type="button"
-                    onClick={() => onViewEvidence(item)}
+                    onClick={() => onViewEvidence({ ...item, taskId: message.taskId })}
                   >
                     <div className="result-top">
                       <div>
@@ -1177,6 +1190,30 @@ export default function App() {
     }
   }
 
+  async function handleSubmitFeedback(item, feedbackType) {
+    if (!item?.taskId) return;
+    const labels = {
+      useful: "结果有用",
+      missing_evidence: "证据不足",
+      not_relevant: "不相关"
+    };
+    try {
+      await submitScreeningFeedback({
+        taskId: item.taskId,
+        resultId: item.id,
+        feedbackType,
+        comment: labels[feedbackType] || feedbackType
+      });
+      const message = `已提交反馈：${labels[feedbackType] || feedbackType}`;
+      setEvidenceToast(message);
+      showToast(message);
+      scheduleTimer(() => setEvidenceToast(""), 2000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || "反馈提交失败");
+      showToast(`反馈提交失败：${message}`);
+    }
+  }
+
   function handleKnowledgeBaseChange(kbId) {
     setSelectedKnowledgeBaseId(kbId);
     persistSelectedKnowledgeBaseId(kbId);
@@ -1490,6 +1527,7 @@ export default function App() {
             onClose={() => setEvidenceOpen(false)}
             onQueueOne={handleQueueOne}
             onCopyEvidence={handleCopyEvidence}
+            onSubmitFeedback={handleSubmitFeedback}
             toastMessage={evidenceToast}
           />
         </div>

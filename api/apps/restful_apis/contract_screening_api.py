@@ -23,6 +23,7 @@ from quart import request
 
 from api.apps import current_user, login_required
 from api.apps.services.contract_screening_export_service import create_screening_export
+from api.apps.services.contract_screening_feedback_service import create_screening_feedback
 from api.apps.services.contract_screening_service import (
     ContractScreeningError,
     ContractScreeningStore,
@@ -217,6 +218,25 @@ async def get_export(export_id: str, tenant_id: str):
         "file_key": export.file_key,
         "error": export.error,
     })
+
+
+@manager.route("/contract-screening/tasks/<task_id>/feedback", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def create_feedback(task_id: str, tenant_id: str):
+    try:
+        feedback = create_screening_feedback(
+            tenant_id=tenant_id,
+            user_id=current_user.id,
+            task_id=task_id,
+            payload=await get_request_json(),
+        )
+        return get_result(data=feedback)
+    except ContractScreeningError as exc:
+        return get_error_argument_result(exc.message)
+    except Exception:
+        logging.exception("failed to create contract screening feedback")
+        return get_error_data_result(message="Internal server error")
 
 
 def _start_background_task(tenant_id: str, task_id: str) -> asyncio.Future:

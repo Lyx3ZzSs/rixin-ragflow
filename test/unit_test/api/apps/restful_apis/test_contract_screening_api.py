@@ -134,6 +134,17 @@ def _load_api(monkeypatch):
     )
     _stub(
         monkeypatch,
+        "api.apps.services.contract_screening_feedback_service",
+        create_screening_feedback=lambda **kwargs: {
+            "feedback_id": "feedback-1",
+            "task_id": kwargs["task_id"],
+            "result_id": kwargs["payload"].get("result_id", ""),
+            "feedback_type": kwargs["payload"].get("feedback_type", ""),
+            "kwargs": kwargs,
+        },
+    )
+    _stub(
+        monkeypatch,
         "api.db.services.contract_screening_service",
         ContractScreeningTaskService=SimpleNamespace(
             list_tasks=lambda **_kwargs: {"total": 0, "items": []},
@@ -575,6 +586,31 @@ def test_create_export_allows_persisted_completed_task(monkeypatch):
     assert result["code"] == 0
     assert result["data"]["kwargs"]["task_id"] == "task-1"
     assert result["data"]["kwargs"]["export_format"] == "word"
+
+
+def test_create_feedback_returns_feedback_metadata(monkeypatch):
+    module = _load_api(monkeypatch)
+
+    async def fake_request_json():
+        return {
+            "result_id": "result-1",
+            "feedback_type": "useful",
+            "comment": "证据准确",
+        }
+
+    monkeypatch.setattr(module, "get_request_json", fake_request_json)
+    monkeypatch.setattr(module, "current_user", SimpleNamespace(id="user-1"))
+
+    result = _run(module.create_feedback("task-1", tenant_id="tenant-1"))
+
+    assert result["code"] == 0
+    assert result["data"]["feedback_id"] == "feedback-1"
+    assert result["data"]["result_id"] == "result-1"
+    assert result["data"]["feedback_type"] == "useful"
+    assert result["data"]["kwargs"]["tenant_id"] == "tenant-1"
+    assert result["data"]["kwargs"]["user_id"] == "user-1"
+    assert result["data"]["kwargs"]["task_id"] == "task-1"
+    assert result["data"]["kwargs"]["payload"]["comment"] == "证据准确"
 
 
 def test_get_task_returns_data_error_when_task_missing(monkeypatch):

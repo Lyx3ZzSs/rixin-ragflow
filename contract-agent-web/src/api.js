@@ -85,6 +85,22 @@ export async function getScreeningExport(exportId) {
   return parseResponse(response);
 }
 
+export async function submitScreeningFeedback({ taskId, resultId = "", evidenceId = "", feedbackType, comment = "" }) {
+  const response = await fetch(`${CONTRACT_SCREENING_BASE}/${taskId}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      result_id: resultId,
+      evidence_id: evidenceId,
+      feedback_type: feedbackType,
+      comment
+    })
+  });
+
+  return parseResponse(response);
+}
+
 export async function getKnowledgeBases() {
   const response = await fetch(`${KNOWLEDGE_BASE_LIST}?page=1&page_size=100`, {
     credentials: "include"
