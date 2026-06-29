@@ -16,10 +16,13 @@
 
 import asyncio
 import logging
+import os
+from pathlib import Path
 
 from quart import request
 
 from api.apps import current_user, login_required
+from api.apps.services.contract_screening_export_service import create_screening_export
 from api.apps.services.contract_screening_service import (
     ContractScreeningError,
     ContractScreeningStore,
@@ -43,6 +46,7 @@ from api.utils.api_utils import (
 
 
 _background_tasks: set[asyncio.Task] = set()
+EXPORT_OUTPUT_DIR = Path(os.getenv("CONTRACT_SCREENING_EXPORT_DIR", "/tmp/ragflow-contract-screening-exports"))
 
 
 @manager.route("/contract-screening/parse", methods=["POST"])  # noqa: F821
@@ -172,6 +176,49 @@ async def get_results(task_id: str, tenant_id: str):
     })
 
 
+@manager.route("/contract-screening/tasks/<task_id>/exports", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def create_export(task_id: str, tenant_id: str):
+    try:
+        if not _task_available_for_export(tenant_id, task_id):
+            return get_error_data_result(message="Task not found")
+
+        req = await get_request_json()
+        export_format = str(req.get("format") or "").lower()
+        export = create_screening_export(
+            tenant_id=tenant_id,
+            user_id=current_user.id,
+            task_id=task_id,
+            export_format=export_format,
+            output_dir=EXPORT_OUTPUT_DIR,
+        )
+        return get_result(data=export)
+    except ContractScreeningError as exc:
+        return get_error_argument_result(exc.message)
+    except Exception:
+        logging.exception("failed to create contract screening export")
+        return get_error_data_result(message="Internal server error")
+
+
+@manager.route("/contract-screening/exports/<export_id>", methods=["GET"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def get_export(export_id: str, tenant_id: str):
+    success, export = contract_screening_db_service.ContractScreeningExportService.get_by_id(export_id)
+    if not success or not export or export.tenant_id != tenant_id:
+        return get_error_data_result(message="Export not found")
+    return get_result(data={
+        "export_id": export.id,
+        "task_id": export.task_id,
+        "format": export.format,
+        "status": export.status,
+        "file_name": export.file_name,
+        "file_key": export.file_key,
+        "error": export.error,
+    })
+
+
 def _start_background_task(tenant_id: str, task_id: str) -> asyncio.Future:
     coro = run_screening_task(tenant_id, task_id)
     try:
@@ -204,6 +251,13 @@ def _load_task_or_error(tenant_id: str, task_id: str) -> dict | None:
     if mark_stale_task_failed(task):
         save_task_or_raise(store, task)
     return task
+
+
+def _task_available_for_export(tenant_id: str, task_id: str) -> bool:
+    task = _load_task_or_error(tenant_id, task_id)
+    if task:
+        return True
+    return bool(contract_screening_db_service.build_results_payload(tenant_id, task_id))
 
 
 def _log_background_task_exception(task: asyncio.Task):

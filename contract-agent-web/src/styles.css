@@ -775,6 +775,15 @@
       text-transform: uppercase;
       letter-spacing: 0.16px;
     }
+    .result-export-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+      margin-top: var(--space-3);
+    }
+    .result-export-bar .btn {
+      min-height: 34px;
+    }
     .chat-results-grid {
       display: grid;
       gap: var(--space-3);

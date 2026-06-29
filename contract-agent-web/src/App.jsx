@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask, listScreeningTasks, parseScreeningPrompt } from "./api.js";
+import { createScreeningExport, createScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask, listScreeningTasks, parseScreeningPrompt } from "./api.js";
 import { buildConditionTaskPayload, conditionToEditor, normalizeEvidencePolicy, normalizeParsedConditions } from "./conditions.js";
 import { contracts, promptExamples } from "./data.js";
 import {
@@ -447,7 +447,8 @@ function ChatView({
   onConditionChange,
   onEvidencePolicyChange,
   onConfirmConditions,
-  onCancelConditions
+  onCancelConditions,
+  onCreateExport
 }) {
   const bodyRef = useRef(null);
   const inputRef = useRef(null);
@@ -512,6 +513,7 @@ function ChatView({
               viewingItemId={viewingItemId}
               onViewEvidence={onViewEvidence}
               onCopyAudit={() => onCopyAudit(msg)}
+              onCreateExport={onCreateExport}
             />
           ))}
           {displayStreaming && (
@@ -615,9 +617,10 @@ function ChatView({
   );
 }
 
-function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit }) {
+function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit, onCreateExport }) {
   const strategyLines = strategyToText(message.strategy).split("\n").filter(Boolean);
   const resultItems = Array.isArray(message.results) ? message.results : [];
+  const canExport = message.taskId && resultItems.length > 0;
 
   return (
     <div className={`chat-bubble ${message.role}`}>
@@ -643,50 +646,62 @@ function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit }) {
 
         {/* Agent result cards */}
         {resultItems.length > 0 && (
-          <div className="chat-results-grid">
-            {resultItems.map((item, index) => {
-              const evidenceCount = Array.isArray(item.evidence) ? item.evidence.length : 0;
+          <>
+            {canExport && (
+              <div className="result-export-bar" aria-label="导出筛选结果">
+                <button className="btn btn-secondary btn-small" type="button" onClick={() => onCreateExport(message.taskId, "excel")}>
+                  <DocumentIcon /> 导出 Excel
+                </button>
+                <button className="btn btn-secondary btn-small" type="button" onClick={() => onCreateExport(message.taskId, "word")}>
+                  <DocumentIcon /> 导出 Word
+                </button>
+              </div>
+            )}
+            <div className="chat-results-grid">
+              {resultItems.map((item, index) => {
+                const evidenceCount = Array.isArray(item.evidence) ? item.evidence.length : 0;
 
-              return (
-              <button
-                key={item.id || `${item.title}-${index}`}
-                className={`chat-result-card${viewingItemId === item.id ? " is-viewing" : ""}`}
-                type="button"
-                onClick={() => onViewEvidence(item)}
-              >
-                <div className="result-top">
-                  <div>
-                    <h3>{item.title}</h3>
-                    <div className="result-meta">
-                      <span>{item.id}</span>
-                      <span>{item.supplier}</span>
-                      <span>{item.amount}</span>
-                      <span>{item.expiry}</span>
+                return (
+                  <button
+                    key={item.id || `${item.title}-${index}`}
+                    className={`chat-result-card${viewingItemId === item.id ? " is-viewing" : ""}`}
+                    type="button"
+                    onClick={() => onViewEvidence(item)}
+                  >
+                    <div className="result-top">
+                      <div>
+                        <h3>{item.title}</h3>
+                        <div className="result-meta">
+                          <span>{item.id}</span>
+                          <span>{item.supplier}</span>
+                          <span>{item.amount}</span>
+                          <span>{item.expiry}</span>
+                        </div>
+                      </div>
+                      <span className="score">{item.score}%</span>
                     </div>
-                  </div>
-                  <span className="score">{item.score}%</span>
-                </div>
-                <p className="excerpt">{item.reason}</p>
-                <div className="hint-row mt-3">
-                  <span className={`status ${statusClass(item.risk)}`}>{item.risk}风险</span>
-                  <span className="status status-strong">{item.status}</span>
-                  <span className="status">{item.owner}</span>
-                </div>
-                <div className="evidence-line">
-                  {viewingItemId === item.id ? (
-                    <span className="viewing-badge">
-                      <EyeIcon /> 正在查看证据
-                    </span>
-                  ) : (
-                    <span className="source-toggle">
-                      <EyeIcon /> 查看 {evidenceCount} 条证据
-                    </span>
-                  )}
-                </div>
-              </button>
-              );
-            })}
-          </div>
+                    <p className="excerpt">{item.reason}</p>
+                    <div className="hint-row mt-3">
+                      <span className={`status ${statusClass(item.risk)}`}>{item.risk}风险</span>
+                      <span className="status status-strong">{item.status}</span>
+                      <span className="status">{item.owner}</span>
+                    </div>
+                    <div className="evidence-line">
+                      {viewingItemId === item.id ? (
+                        <span className="viewing-badge">
+                          <EyeIcon /> 正在查看证据
+                        </span>
+                      ) : (
+                        <span className="source-toggle">
+                          <EyeIcon /> 查看 {evidenceCount} 条证据
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -1077,6 +1092,7 @@ export default function App() {
         {
           id: `${taskId}-result`,
           role: "agent",
+          taskId,
           content: items.length > 0 ? `筛选完成，命中 ${items.length} 份合同。` : "筛选完成，没有命中合同。",
           strategy: result?.strategy,
           results: items
@@ -1146,6 +1162,19 @@ export default function App() {
       )
       .join("\n\n---\n\n");
     copyText(text, "已复制审计包");
+  }
+
+  async function handleCreateExport(taskId, format) {
+    if (!taskId) return;
+    try {
+      const label = format === "word" ? "Word" : "Excel";
+      showToast(`正在生成 ${label} 文件`);
+      const result = await createScreeningExport({ taskId, format });
+      showToast(`已生成 ${label}：${result?.file_name || result?.export_id || taskId}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || "导出失败");
+      showToast(`导出失败：${message}`);
+    }
   }
 
   function handleKnowledgeBaseChange(kbId) {
@@ -1311,6 +1340,7 @@ export default function App() {
       const agentMsg = {
         id: nextMessageId(),
         role: "agent",
+        taskId,
         content: items.length > 0 ? `筛选完成，命中 ${items.length} 份合同。` : "筛选完成，没有命中合同。",
         strategy: result?.strategy,
         results: items
@@ -1449,6 +1479,7 @@ export default function App() {
             onEvidencePolicyChange={updatePendingEvidencePolicy}
             onConfirmConditions={() => runScreeningWithConditions(pendingConditionReview)}
             onCancelConditions={() => setPendingConditionReview(null)}
+            onCreateExport={handleCreateExport}
           />
         </div>
 

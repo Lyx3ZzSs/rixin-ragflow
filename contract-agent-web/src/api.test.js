@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   createScreeningTask,
+  createScreeningExport,
   getKnowledgeBases,
+  getScreeningExport,
   getScreeningResults,
   mapScreeningItemToContract,
   listScreeningTasks,
@@ -257,6 +259,57 @@ test("parseScreeningPrompt posts prompt for editable condition parsing", async (
 
     assert.equal(result.query, "筛选付款合同");
     assert.equal(result.conditions[0].id, "payment_terms");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("createScreeningExport posts desired export format", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "/api/v1/contract-screening/tasks/task-1/exports");
+    assert.equal(options.method, "POST");
+    assert.deepEqual(JSON.parse(options.body), { format: "excel" });
+
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { code: 0, data: { export_id: "export-1", status: "done" } };
+      }
+    };
+  };
+
+  try {
+    assert.deepEqual(await createScreeningExport({ taskId: "task-1", format: "excel" }), {
+      export_id: "export-1",
+      status: "done"
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("getScreeningExport fetches export metadata", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "/api/v1/contract-screening/exports/export-1");
+    assert.deepEqual(options, { credentials: "include" });
+
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { code: 0, data: { export_id: "export-1", file_name: "result.xlsx" } };
+      }
+    };
+  };
+
+  try {
+    assert.deepEqual(await getScreeningExport("export-1"), {
+      export_id: "export-1",
+      file_name: "result.xlsx"
+    });
   } finally {
     globalThis.fetch = previousFetch;
   }

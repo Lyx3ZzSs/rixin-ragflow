@@ -66,6 +66,25 @@ export async function getScreeningResults(taskId) {
   };
 }
 
+export async function createScreeningExport({ taskId, format }) {
+  const response = await fetch(`${CONTRACT_SCREENING_BASE}/${taskId}/exports`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ format })
+  });
+
+  return parseResponse(response);
+}
+
+export async function getScreeningExport(exportId) {
+  const response = await fetch(`/api/v1/contract-screening/exports/${exportId}`, {
+    credentials: "include"
+  });
+
+  return parseResponse(response);
+}
+
 export async function getKnowledgeBases() {
   const response = await fetch(`${KNOWLEDGE_BASE_LIST}?page=1&page_size=100`, {
     credentials: "include"
