@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask, listScreeningTasks } from "./api.js";
+import { createScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask, listScreeningTasks, parseScreeningPrompt } from "./api.js";
+import { buildConditionTaskPayload, conditionToEditor, normalizeEvidencePolicy, normalizeParsedConditions } from "./conditions.js";
 import { contracts, promptExamples } from "./data.js";
 import {
   buildAuditText,
@@ -357,6 +358,73 @@ function KeyValue({ label, value }) {
   );
 }
 
+function ConditionReview({ review, onConditionChange, onEvidencePolicyChange, onConfirm, onCancel }) {
+  if (!review) return null;
+
+  return (
+    <div className="condition-review">
+      <div className="condition-review-head">
+        <div>
+          <p className="meta">条件确认</p>
+          <strong>确认后开始筛选</strong>
+        </div>
+        <button className="btn btn-secondary btn-small" type="button" onClick={onCancel}>
+          取消
+        </button>
+      </div>
+      <div className="condition-list">
+        {review.conditions.map((condition, index) => (
+          <div className="condition-row" key={condition.id || index}>
+            <label className="condition-toggle">
+              <input
+                type="checkbox"
+                checked={condition.enabled}
+                onChange={(event) => onConditionChange(index, "enabled", event.target.checked)}
+              />
+              <span>{condition.label}</span>
+            </label>
+            <input
+              className="condition-input"
+              value={condition.keywordsText}
+              onChange={(event) => onConditionChange(index, "keywordsText", event.target.value)}
+              aria-label={`${condition.label}关键词`}
+            />
+            <div className="condition-fields">
+              <input
+                className="condition-value"
+                value={condition.operator}
+                onChange={(event) => onConditionChange(index, "operator", event.target.value)}
+                aria-label={`${condition.label}操作符`}
+              />
+              <input
+                className="condition-value"
+                value={condition.value}
+                onChange={(event) => onConditionChange(index, "value", event.target.value)}
+                aria-label={`${condition.label}取值`}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="condition-footer">
+        <label>
+          每份合同证据数
+          <input
+            type="number"
+            min="1"
+            max="20"
+            value={review.evidencePolicy.max_evidence_per_contract}
+            onChange={(event) => onEvidencePolicyChange("max_evidence_per_contract", event.target.value)}
+          />
+        </label>
+        <button className="btn btn-primary btn-small" type="button" onClick={onConfirm}>
+          开始筛选
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Chat View (middle) ─────────────────────────────────────────── */
 
 function ChatView({
@@ -374,7 +442,12 @@ function ChatView({
   selectedKnowledgeBaseId,
   onKnowledgeBaseChange,
   isKnowledgeBaseLoading,
-  knowledgeBaseError
+  knowledgeBaseError,
+  pendingConditionReview,
+  onConditionChange,
+  onEvidencePolicyChange,
+  onConfirmConditions,
+  onCancelConditions
 }) {
   const bodyRef = useRef(null);
   const inputRef = useRef(null);
@@ -387,7 +460,7 @@ function ChatView({
 
   function handleSend() {
     const trimmed = inputValue.trim();
-    if (!trimmed || isStreaming || !selectedKnowledgeBaseId) return;
+    if (!trimmed || isStreaming || pendingConditionReview || !selectedKnowledgeBaseId) return;
     onSend(trimmed);
     setInputValue("");
   }
@@ -471,6 +544,13 @@ function ChatView({
 
       {/* Chat input bar */}
       <div className="chat-input-bar">
+        <ConditionReview
+          review={pendingConditionReview}
+          onConditionChange={onConditionChange}
+          onEvidencePolicyChange={onEvidencePolicyChange}
+          onConfirm={onConfirmConditions}
+          onCancel={onCancelConditions}
+        />
         <div className="kb-toolbar">
           <label className="kb-selector">
             <span>知识库</span>
@@ -502,13 +582,13 @@ function ChatView({
             onKeyDown={handleKeyDown}
             placeholder="描述你要找的合同，例如：筛出本季度到期的外包合同..."
             rows={1}
-            disabled={isStreaming}
+            disabled={isStreaming || Boolean(pendingConditionReview)}
           />
           <button
             className="chat-send"
             type="button"
             onClick={handleSend}
-            disabled={isStreaming || !inputValue.trim() || !selectedKnowledgeBaseId}
+            disabled={isStreaming || Boolean(pendingConditionReview) || !inputValue.trim() || !selectedKnowledgeBaseId}
             aria-label="发送消息"
           >
             <SendIcon />
@@ -806,6 +886,7 @@ export default function App() {
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [knowledgeBaseLoading, setKnowledgeBaseLoading] = useState(false);
   const [knowledgeBaseError, setKnowledgeBaseError] = useState("");
+  const [pendingConditionReview, setPendingConditionReview] = useState(null);
 
   const [conversations, setConversations] = useState(() => buildInitialConversations());
   const [activeConversationId, setActiveConversationId] = useState("conv-1");
@@ -1159,27 +1240,43 @@ export default function App() {
     return null;
   }
 
-  async function handleSend(text) {
-    if (isStreaming || !activeConversationId) return;
+  function updatePendingCondition(index, field, value) {
+    setPendingConditionReview((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        conditions: current.conditions.map((condition, conditionIndex) =>
+          conditionIndex === index ? { ...condition, [field]: value } : condition
+        )
+      };
+    });
+  }
 
-    const conversationId = activeConversationId;
-    const userMsg = { id: nextMessageId(), role: "user", content: text };
+  function updatePendingEvidencePolicy(field, value) {
+    setPendingConditionReview((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        evidencePolicy: normalizeEvidencePolicy({
+          ...current.evidencePolicy,
+          [field]: value
+        })
+      };
+    });
+  }
 
-    appendMessagesToConversation(conversationId, [userMsg], { titlePrompt: text });
+  async function runScreeningWithConditions(review) {
+    if (!review || isStreaming) return;
 
-    if (!selectedKnowledgeBaseId) {
-      appendMessagesToConversation(conversationId, [
-        {
-          id: nextMessageId(),
-          role: "agent",
-          content: "请在地址栏添加 ?kb_id=<知识库ID> 后再筛选，后续会接入知识库选择器。"
-        }
-      ]);
-      return;
-    }
-
+    const { conditions, evidence_policy: evidencePolicy } = buildConditionTaskPayload({
+      conditions: review.conditions,
+      evidencePolicy: review.evidencePolicy
+    });
+    const conversationId = review.conversationId;
+    const text = review.prompt;
     const runId = screeningRunRef.current + 1;
     screeningRunRef.current = runId;
+    setPendingConditionReview(null);
     setIsStreaming(true);
     setStreamingConversationId(conversationId);
     setStreamingPhases([{ key: "parse_prompt", label: taskPhaseToLabel("parse_prompt"), done: false }]);
@@ -1188,7 +1285,9 @@ export default function App() {
       const createdTask = await createScreeningTask({
         kbId: selectedKnowledgeBaseId,
         prompt: text,
-        filters: DEFAULT_FILTERS
+        filters: DEFAULT_FILTERS,
+        conditions,
+        evidencePolicy
       });
       const taskId = resolveTaskId(createdTask);
       if (!taskId) {
@@ -1240,6 +1339,72 @@ export default function App() {
     }
   }
 
+  async function handleSend(text) {
+    if (isStreaming || !activeConversationId) return;
+
+    const conversationId = activeConversationId;
+    const userMsg = { id: nextMessageId(), role: "user", content: text };
+
+    appendMessagesToConversation(conversationId, [userMsg], { titlePrompt: text });
+
+    if (!selectedKnowledgeBaseId) {
+      appendMessagesToConversation(conversationId, [
+        {
+          id: nextMessageId(),
+          role: "agent",
+          content: "请在地址栏添加 ?kb_id=<知识库ID> 后再筛选，后续会接入知识库选择器。"
+        }
+      ]);
+      return;
+    }
+
+    setIsStreaming(true);
+    setStreamingConversationId(conversationId);
+    setStreamingPhases([{ key: "parse_prompt", label: taskPhaseToLabel("parse_prompt"), done: false }]);
+
+    try {
+      const parsed = await parseScreeningPrompt({
+        kbId: selectedKnowledgeBaseId,
+        prompt: text,
+        filters: DEFAULT_FILTERS
+      });
+      if (!mountedRef.current) return;
+      const conditions = normalizeParsedConditions(parsed?.conditions).map(conditionToEditor);
+      const evidencePolicy = normalizeEvidencePolicy(parsed?.evidence_policy);
+      setStreamingPhases((prev) => prev.map((phase) => ({ ...phase, done: true })));
+      setPendingConditionReview({
+        conversationId,
+        prompt: text,
+        conditions,
+        evidencePolicy
+      });
+      appendMessagesToConversation(conversationId, [
+        {
+          id: nextMessageId(),
+          role: "agent",
+          content: conditions.length > 0 ? "已解析筛选条件，请确认后开始筛选。" : "未解析到明确条件，可直接开始筛选。"
+        }
+      ]);
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const message = error instanceof Error ? error.message : String(error || "条件解析失败");
+      appendMessagesToConversation(conversationId, [
+        {
+          id: nextMessageId(),
+          role: "agent",
+          content: `条件解析失败：${message}`
+        }
+      ]);
+      showToast("条件解析失败");
+    } finally {
+      if (mountedRef.current) {
+        setIsStreaming(false);
+        setStreamingConversationId(null);
+        setStreamingPhases([]);
+      }
+    }
+  }
+
   return (
     <>
       <Header
@@ -1279,6 +1444,11 @@ export default function App() {
             onKnowledgeBaseChange={handleKnowledgeBaseChange}
             isKnowledgeBaseLoading={knowledgeBaseLoading}
             knowledgeBaseError={knowledgeBaseError}
+            pendingConditionReview={pendingConditionReview}
+            onConditionChange={updatePendingCondition}
+            onEvidencePolicyChange={updatePendingEvidencePolicy}
+            onConfirmConditions={() => runScreeningWithConditions(pendingConditionReview)}
+            onCancelConditions={() => setPendingConditionReview(null)}
           />
         </div>
 

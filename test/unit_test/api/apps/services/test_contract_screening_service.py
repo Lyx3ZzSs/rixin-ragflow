@@ -108,6 +108,54 @@ def test_validate_create_task_request_normalizes_filters():
     assert payload["filters"] == {"risk": "高", "status": "全部", "source": "全部"}
 
 
+def test_validate_create_task_request_accepts_conditions_and_evidence_policy():
+    payload = validate_create_task_request({
+        "kb_id": "kb-1",
+        "prompt": "筛选高风险合同",
+        "conditions": [
+            {
+                "id": "risk_terms",
+                "label": "高风险条款",
+                "keywords": ["违约", "赔偿"],
+                "operator": "exists",
+                "value": "",
+                "enabled": True,
+            }
+        ],
+        "evidence_policy": {"group_by": "document", "max_evidence_per_contract": 3},
+    })
+
+    assert payload["conditions"] == [
+        {
+            "id": "risk_terms",
+            "label": "高风险条款",
+            "keywords": ["违约", "赔偿"],
+            "operator": "exists",
+            "value": "",
+            "enabled": True,
+        }
+    ]
+    assert payload["evidence_policy"] == {"group_by": "document", "max_evidence_per_contract": 3}
+
+
+def test_build_strategy_prefers_user_confirmed_conditions():
+    task = create_initial_task(
+        task_id="task-1",
+        tenant_id="tenant-1",
+        user_id="user-1",
+        kb_id="kb-1",
+        prompt="筛选合同",
+        filters={"risk": "全部", "status": "全部", "source": "全部"},
+    )
+    task["conditions"] = [{"id": "edited", "label": "人工确认条件", "keywords": ["人工"], "enabled": True}]
+    task["evidence_policy"] = {"group_by": "document", "max_evidence_per_contract": 2}
+
+    strategy = build_strategy(task)
+
+    assert strategy["conditions"] == task["conditions"]
+    assert strategy["evidence_policy"]["max_evidence_per_contract"] == 2
+
+
 def test_store_roundtrips_task():
     redis = FakeRedis()
     store = ContractScreeningStore(redis=redis, ttl_seconds=60)

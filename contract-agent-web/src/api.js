@@ -1,4 +1,5 @@
 const CONTRACT_SCREENING_BASE = "/api/v1/contract-screening/tasks";
+const CONTRACT_SCREENING_PARSE = "/api/v1/contract-screening/parse";
 const KNOWLEDGE_BASE_LIST = "/api/v1/datasets";
 
 export async function parseResponse(response) {
@@ -16,12 +17,30 @@ export async function parseResponse(response) {
   return payload.data;
 }
 
-export async function createScreeningTask({ kbId, prompt, filters }) {
-  const response = await fetch(CONTRACT_SCREENING_BASE, {
+export async function parseScreeningPrompt({ kbId, prompt, filters }) {
+  const response = await fetch(CONTRACT_SCREENING_PARSE, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify({ kb_id: kbId, prompt, filters })
+  });
+
+  return parseResponse(response);
+}
+
+export async function createScreeningTask({ kbId, prompt, filters, conditions, evidencePolicy }) {
+  const body = { kb_id: kbId, prompt, filters };
+  if (Array.isArray(conditions)) {
+    body.conditions = conditions;
+  }
+  if (evidencePolicy && typeof evidencePolicy === "object") {
+    body.evidence_policy = evidencePolicy;
+  }
+  const response = await fetch(CONTRACT_SCREENING_BASE, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body)
   });
 
   return parseResponse(response);

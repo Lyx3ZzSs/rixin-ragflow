@@ -47,6 +47,8 @@ class ContractScreeningTask:
     kb_id: str
     prompt: str
     filters: dict[str, str]
+    conditions: list[dict[str, Any]] = field(default_factory=list)
+    evidence_policy: dict[str, Any] = field(default_factory=dict)
     status: str = "pending"
     phase: str = "parse_prompt"
     progress: float = 0.0
@@ -80,7 +82,51 @@ def validate_create_task_request(req: dict[str, Any]) -> dict[str, Any]:
             if isinstance(value, str) and value.strip():
                 filters[key] = value.strip()
 
-    return {"kb_id": kb_id, "prompt": prompt, "filters": filters}
+    conditions = _normalize_conditions(req.get("conditions"))
+    evidence_policy = _normalize_evidence_policy(req.get("evidence_policy"))
+
+    return {
+        "kb_id": kb_id,
+        "prompt": prompt,
+        "filters": filters,
+        "conditions": conditions,
+        "evidence_policy": evidence_policy,
+    }
+
+
+def _normalize_conditions(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    conditions = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        keywords = item.get("keywords")
+        if not isinstance(keywords, list):
+            keywords = []
+        conditions.append({
+            "id": str(item.get("id") or "contract_terms"),
+            "label": str(item.get("label") or "合同筛选条件"),
+            "keywords": [str(keyword).strip() for keyword in keywords if str(keyword).strip()],
+            "operator": str(item.get("operator") or "exists"),
+            "value": str(item.get("value") or ""),
+            "enabled": bool(item.get("enabled", True)),
+        })
+    return conditions
+
+
+def _normalize_evidence_policy(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    try:
+        max_evidence = int(value.get("max_evidence_per_contract") or 5)
+    except (TypeError, ValueError):
+        max_evidence = 5
+    max_evidence = max(1, min(max_evidence, 20))
+    return {
+        "group_by": str(value.get("group_by") or "document"),
+        "max_evidence_per_contract": max_evidence,
+    }
 
 
 def create_initial_task(
@@ -91,6 +137,8 @@ def create_initial_task(
     kb_id: str,
     prompt: str,
     filters: dict[str, str],
+    conditions: list[dict[str, Any]] | None = None,
+    evidence_policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return asdict(
         ContractScreeningTask(
@@ -100,6 +148,8 @@ def create_initial_task(
             kb_id=kb_id,
             prompt=prompt,
             filters=filters,
+            conditions=conditions or [],
+            evidence_policy=evidence_policy or {},
         )
     )
 
@@ -189,6 +239,25 @@ def build_strategy(task: Any) -> dict[str, Any]:
     filters = _field_value(task, "filters")
     if not isinstance(filters, dict):
         filters = {}
+    confirmed_conditions = _field_value(task, "conditions")
+    confirmed_evidence_policy = _field_value(task, "evidence_policy")
+    if isinstance(confirmed_conditions, list) and confirmed_conditions:
+        evidence_policy = {
+            "group_by": "document",
+            "text_fields": ["content", "content_with_weight", "text"],
+            "max_evidence_per_contract": 5,
+        }
+        if isinstance(confirmed_evidence_policy, dict):
+            evidence_policy.update(_normalize_evidence_policy(confirmed_evidence_policy))
+            if "text_fields" not in evidence_policy:
+                evidence_policy["text_fields"] = ["content", "content_with_weight", "text"]
+        return {
+            "query": prompt,
+            "conditions": confirmed_conditions,
+            "filters": dict(filters),
+            "evidence_policy": evidence_policy,
+            "limit_per_condition": 20,
+        }
 
     conditions = []
     if "付款" in prompt or "账期" in prompt:

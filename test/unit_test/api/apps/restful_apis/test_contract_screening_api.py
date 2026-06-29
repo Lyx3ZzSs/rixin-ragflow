@@ -65,7 +65,13 @@ def _load_api(monkeypatch):
             raise ContractScreeningError("`prompt` is required")
         filters = {"risk": "全部", "status": "全部", "source": "全部"}
         filters.update(req.get("filters") or {})
-        return {"kb_id": kb_id, "prompt": prompt, "filters": filters}
+        return {
+            "kb_id": kb_id,
+            "prompt": prompt,
+            "filters": filters,
+            "conditions": req.get("conditions") or [],
+            "evidence_policy": req.get("evidence_policy") or {},
+        }
 
     def create_initial_task(**kwargs):
         return {
@@ -104,6 +110,16 @@ def _load_api(monkeypatch):
         run_screening_task=lambda *_args, **_kwargs: None,
         save_task_or_raise=lambda _store, _task: None,
         validate_create_task_request=validate_create_task_request,
+    )
+    _stub(
+        monkeypatch,
+        "api.apps.services.contract_screening_parser_service",
+        parse_screening_prompt=lambda req: {
+            "query": req.get("prompt", ""),
+            "conditions": [{"id": "contract_terms", "label": "合同筛选条件", "keywords": ["合同"], "operator": "exists", "value": "", "enabled": True}],
+            "filters": req.get("filters") or {"risk": "全部", "status": "全部", "source": "全部"},
+            "evidence_policy": {"group_by": "document", "max_evidence_per_contract": 5},
+        },
     )
     _stub(
         monkeypatch,
@@ -155,6 +171,37 @@ def _load_api(monkeypatch):
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def test_parse_prompt_returns_editable_conditions(monkeypatch):
+    module = _load_api(monkeypatch)
+
+    async def fake_request_json():
+        return {"kb_id": "kb-1", "prompt": "筛选高风险合同"}
+
+    monkeypatch.setattr(module, "get_request_json", fake_request_json)
+    monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda kb_id, user_id: True)
+
+    result = _run(module.parse_prompt(tenant_id="tenant-1"))
+
+    assert result == {
+        "code": 0,
+        "data": {
+            "query": "筛选高风险合同",
+            "conditions": [
+                {
+                    "id": "contract_terms",
+                    "label": "合同筛选条件",
+                    "keywords": ["合同"],
+                    "operator": "exists",
+                    "value": "",
+                    "enabled": True,
+                }
+            ],
+            "filters": {"risk": "全部", "status": "全部", "source": "全部"},
+            "evidence_policy": {"group_by": "document", "max_evidence_per_contract": 5},
+        },
+    }
 
 
 def test_list_tasks_returns_current_user_history(monkeypatch):

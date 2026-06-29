@@ -6,6 +6,7 @@ import {
   getScreeningResults,
   mapScreeningItemToContract,
   listScreeningTasks,
+  parseScreeningPrompt,
   parseResponse
 } from "./api.js";
 
@@ -178,6 +179,84 @@ test("createScreeningTask posts JSON body and propagates HTTP errors", async () 
       createScreeningTask({ kbId: "kb-1", prompt: "筛选高风险合同", filters: { risk: "高" } }),
       /HTTP 503/
     );
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("createScreeningTask includes edited conditions and evidence policy", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "/api/v1/contract-screening/tasks");
+    assert.deepEqual(JSON.parse(options.body), {
+      kb_id: "kb-1",
+      prompt: "筛选高风险合同",
+      filters: { risk: "高" },
+      conditions: [{ id: "risk", label: "风险", keywords: ["风险"], operator: "exists", value: "", enabled: true }],
+      evidence_policy: { group_by: "document", max_evidence_per_contract: 3 }
+    });
+
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { code: 0, data: { task_id: "task-1" } };
+      }
+    };
+  };
+
+  try {
+    const result = await createScreeningTask({
+      kbId: "kb-1",
+      prompt: "筛选高风险合同",
+      filters: { risk: "高" },
+      conditions: [{ id: "risk", label: "风险", keywords: ["风险"], operator: "exists", value: "", enabled: true }],
+      evidencePolicy: { group_by: "document", max_evidence_per_contract: 3 }
+    });
+
+    assert.deepEqual(result, { task_id: "task-1" });
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("parseScreeningPrompt posts prompt for editable condition parsing", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, "/api/v1/contract-screening/parse");
+    assert.equal(options.method, "POST");
+    assert.equal(options.credentials, "include");
+    assert.deepEqual(JSON.parse(options.body), {
+      kb_id: "kb-1",
+      prompt: "筛选付款合同",
+      filters: { risk: "全部" }
+    });
+
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          code: 0,
+          data: {
+            query: "筛选付款合同",
+            conditions: [{ id: "payment_terms", label: "付款", keywords: ["付款"], operator: "exists", value: "", enabled: true }],
+            evidence_policy: { group_by: "document", max_evidence_per_contract: 5 }
+          }
+        };
+      }
+    };
+  };
+
+  try {
+    const result = await parseScreeningPrompt({
+      kbId: "kb-1",
+      prompt: "筛选付款合同",
+      filters: { risk: "全部" }
+    });
+
+    assert.equal(result.query, "筛选付款合同");
+    assert.equal(result.conditions[0].id, "payment_terms");
   } finally {
     globalThis.fetch = previousFetch;
   }

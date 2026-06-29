@@ -30,6 +30,7 @@ from api.apps.services.contract_screening_service import (
     save_task_or_raise,
     validate_create_task_request,
 )
+from api.apps.services.contract_screening_parser_service import parse_screening_prompt
 from api.db.services import contract_screening_service as contract_screening_db_service
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.utils.api_utils import (
@@ -42,6 +43,23 @@ from api.utils.api_utils import (
 
 
 _background_tasks: set[asyncio.Task] = set()
+
+
+@manager.route("/contract-screening/parse", methods=["POST"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+async def parse_prompt(tenant_id: str):
+    try:
+        req = await get_request_json()
+        payload = parse_screening_prompt(req)
+        if not KnowledgebaseService.accessible(kb_id=req.get("kb_id"), user_id=tenant_id):
+            return get_error_data_result(message="You don't own the dataset.")
+        return get_result(data=payload)
+    except ContractScreeningError as exc:
+        return get_error_argument_result(exc.message)
+    except Exception:
+        logging.exception("failed to parse contract screening prompt")
+        return get_error_data_result(message="Internal server error")
 
 
 @manager.route("/contract-screening/tasks", methods=["GET"])  # noqa: F821
@@ -82,6 +100,8 @@ async def create_task(tenant_id: str):
             kb_id=payload["kb_id"],
             prompt=payload["prompt"],
             filters=payload["filters"],
+            conditions=payload["conditions"],
+            evidence_policy=payload["evidence_policy"],
         )
         if not ContractScreeningStore().save(task):
             raise RuntimeError("Failed to persist contract screening task")
