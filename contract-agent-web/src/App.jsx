@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createScreeningExport, createScreeningTask, deleteScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask, listScreeningTasks, logout, parseScreeningPrompt, submitScreeningFeedback } from "./api.js";
+import { createScreeningTask, deleteScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask, listScreeningTasks, logout, parseScreeningPrompt } from "./api.js";
 import { buildConditionTaskPayload, conditionToEditor, normalizeEvidencePolicy, normalizeParsedConditions } from "./conditions.js";
 import { contracts, promptExamples } from "./data.js";
 import {
@@ -262,7 +262,7 @@ function ConversationHistory({ conversations, activeId, onSelect, onNew, onDelet
 
 /* ─── Evidence Panel (right) ──────────────────────────────────────── */
 
-function EvidencePanel({ item, onClose, onQueueOne, onCopyEvidence, onSubmitFeedback, toastMessage }) {
+function EvidencePanel({ item, onClose }) {
   if (!item) {
     return (
       <div className="evidence-panel">
@@ -283,7 +283,6 @@ function EvidencePanel({ item, onClose, onQueueOne, onCopyEvidence, onSubmitFeed
   }
 
   const evidenceItems = Array.isArray(item.evidence) ? item.evidence : [];
-  const actionItems = Array.isArray(item.actions) ? item.actions : [];
   const timelineItems = normalizeTimelineItems(item.timeline);
 
   return (
@@ -335,24 +334,6 @@ function EvidencePanel({ item, onClose, onQueueOne, onCopyEvidence, onSubmitFeed
         </div>
 
         <div className="detail-section">
-          <p className="meta">下一步动作</p>
-          <ul className="action-list">
-            {actionItems.map((action) => (
-              <li className="action-item" key={action}>
-                <strong>{action}</strong>
-                <span>可加入采购/法务待办队列并保留当前筛选依据。</span>
-              </li>
-            ))}
-            {actionItems.length === 0 && (
-              <li className="action-item">
-                <strong>待人工复核</strong>
-                <span>可加入采购/法务待办队列并保留当前筛选依据。</span>
-              </li>
-            )}
-          </ul>
-        </div>
-
-        <div className="detail-section">
           <p className="meta">关键节点</p>
           <div className="timeline">
             {timelineItems.map(([label, value]) => (
@@ -368,33 +349,6 @@ function EvidencePanel({ item, onClose, onQueueOne, onCopyEvidence, onSubmitFeed
               </div>
             )}
           </div>
-        </div>
-
-        <div className="row mt-5">
-          <button className="btn btn-primary btn-small" type="button" onClick={() => onQueueOne(item)}>
-            加入待办
-          </button>
-          <button className="btn btn-secondary btn-small" type="button" onClick={() => onCopyEvidence(item)}>
-            复制证据
-          </button>
-          {item.taskId && (
-            <>
-              <button className="btn btn-secondary btn-small" type="button" onClick={() => onSubmitFeedback(item, "useful")}>
-                <CheckIcon /> 结果有用
-              </button>
-              <button className="btn btn-secondary btn-small" type="button" onClick={() => onSubmitFeedback(item, "missing_evidence")}>
-                <DocumentIcon /> 证据不足
-              </button>
-              <button className="btn btn-secondary btn-small" type="button" onClick={() => onSubmitFeedback(item, "not_relevant")}>
-                <SearchIcon /> 不相关
-              </button>
-            </>
-          )}
-          {toastMessage && (
-            <span style={{ fontSize: "var(--text-xs)", color: "var(--success)", display: "inline-flex", alignItems: "center", gap: "4px", marginLeft: "var(--space-2)" }}>
-              <CheckIcon /> {toastMessage}
-            </span>
-          )}
         </div>
       </div>
     </div>
@@ -427,8 +381,7 @@ function ChatView({
   selectedKnowledgeBaseId,
   onKnowledgeBaseChange,
   isKnowledgeBaseLoading,
-  knowledgeBaseError,
-  onCreateExport
+  knowledgeBaseError
 }) {
   const bodyRef = useRef(null);
   const inputRef = useRef(null);
@@ -472,7 +425,6 @@ function ChatView({
               viewingItemId={viewingItemId}
               onViewEvidence={onViewEvidence}
               onCopyAudit={() => onCopyAudit(msg)}
-              onCreateExport={onCreateExport}
             />
           ))}
           {displayStreaming && (
@@ -572,10 +524,9 @@ function ChatView({
   );
 }
 
-function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit, onCreateExport }) {
+function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit }) {
   const strategyLines = strategyToText(message.strategy).split("\n").filter(Boolean);
   const resultItems = Array.isArray(message.results) ? message.results : [];
-  const canExport = message.taskId && resultItems.length > 0;
 
   return (
     <div className={`chat-bubble ${message.role}`}>
@@ -601,82 +552,70 @@ function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit, onCre
 
         {/* Agent result cards */}
         {resultItems.length > 0 && (
-          <>
-            {canExport && (
-              <div className="result-export-bar" aria-label="导出筛选结果">
-                <button className="btn btn-secondary btn-small" type="button" onClick={() => onCreateExport(message.taskId, "excel")}>
-                  <DocumentIcon /> 导出 Excel
-                </button>
-                <button className="btn btn-secondary btn-small" type="button" onClick={() => onCreateExport(message.taskId, "word")}>
-                  <DocumentIcon /> 导出 Word
-                </button>
-              </div>
-            )}
-            <div className="chat-results-grid">
-              {resultItems.map((item, index) => {
-                const evidenceCount = Array.isArray(item.evidence) ? item.evidence.length : 0;
+          <div className="chat-results-grid">
+            {resultItems.map((item, index) => {
+              const evidenceCount = Array.isArray(item.evidence) ? item.evidence.length : 0;
 
-                return (
-                  <div
-                    key={item.id || `${item.title}-${index}`}
-                    className={`chat-result-card${viewingItemId === item.id ? " is-viewing" : ""}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => onViewEvidence({ ...item, taskId: message.taskId })}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        onViewEvidence({ ...item, taskId: message.taskId });
-                      }
-                    }}
-                  >
-                    <div className="result-top">
-                      <div>
-                        <h3>{item.title}</h3>
-                        <div className="result-meta">
-                          <span>{item.id}</span>
-                          <span>{item.supplier}</span>
-                          <span>{item.amount}</span>
-                          <span>{item.expiry}</span>
-                        </div>
+              return (
+                <div
+                  key={item.id || `${item.title}-${index}`}
+                  className={`chat-result-card${viewingItemId === item.id ? " is-viewing" : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onViewEvidence({ ...item, taskId: message.taskId })}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onViewEvidence({ ...item, taskId: message.taskId });
+                    }
+                  }}
+                >
+                  <div className="result-top">
+                    <div>
+                      <h3>{item.title}</h3>
+                      <div className="result-meta">
+                        <span>{item.id}</span>
+                        <span>{item.supplier}</span>
+                        <span>{item.amount}</span>
+                        <span>{item.expiry}</span>
                       </div>
-                      <span className="score">{item.score}%</span>
                     </div>
-                    <p className="excerpt">{item.reason}</p>
-                    <div className="hint-row mt-3">
-                      <span className={`status ${statusClass(item.risk)}`}>{item.risk}风险</span>
-                      <span className="status status-strong">{item.status}</span>
-                      <span className="status">{item.owner}</span>
-                    </div>
-                    <div className="evidence-line">
-                      {viewingItemId === item.id ? (
-                        <span className="viewing-badge">
-                          <EyeIcon /> 正在查看证据
-                        </span>
-                      ) : (
-                        <span className="source-toggle">
-                          <EyeIcon /> 查看 {evidenceCount} 条证据
-                        </span>
-                      )}
-                      {item.downloadUrl && (
-                        <a
-                          className="btn btn-secondary btn-small download-file-button"
-                          href={item.downloadUrl}
-                          download
-                          onClick={(event) => {
-                            event.stopPropagation();
-                          }}
-                          title="下载原文件"
-                        >
-                          <DownloadIcon /> 下载原文件
-                        </a>
-                      )}
-                    </div>
+                    <span className="score">{item.score}%</span>
                   </div>
-                );
-              })}
-            </div>
-          </>
+                  <p className="excerpt">{item.reason}</p>
+                  <div className="hint-row mt-3">
+                    <span className={`status ${statusClass(item.risk)}`}>{item.risk}风险</span>
+                    <span className="status status-strong">{item.status}</span>
+                    <span className="status">{item.owner}</span>
+                  </div>
+                  <div className="evidence-line">
+                    {viewingItemId === item.id ? (
+                      <span className="viewing-badge">
+                        <EyeIcon /> 正在查看证据
+                      </span>
+                    ) : (
+                      <span className="source-toggle">
+                        <EyeIcon /> 查看 {evidenceCount} 条证据
+                      </span>
+                    )}
+                    {item.downloadUrl && (
+                      <a
+                        className="btn btn-secondary btn-small download-file-button"
+                        href={item.downloadUrl}
+                        download
+                        onClick={(event) => {
+                          event.stopPropagation();
+                        }}
+                        title="下载原文件"
+                      >
+                        <DownloadIcon /> 下载原文件
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>
@@ -871,7 +810,6 @@ export default function App() {
   const [streamingConversationId, setStreamingConversationId] = useState(null);
   const [streamingPhases, setStreamingPhases] = useState([]);
   const [toast, setToast] = useState({ message: "已完成", visible: false });
-  const [evidenceToast, setEvidenceToast] = useState("");
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState(() => readSelectedKnowledgeBaseId());
   const [knowledgeBases, setKnowledgeBases] = useState([]);
   const [knowledgeBaseLoading, setKnowledgeBaseLoading] = useState(false);
@@ -1015,7 +953,6 @@ export default function App() {
   function viewEvidence(item) {
     setEvidenceItem(item);
     setEvidenceOpen(true);
-    setEvidenceToast("");
   }
 
   function toggleHistory() {
@@ -1033,7 +970,6 @@ export default function App() {
     setHistoryOpen(true);
     setEvidenceOpen(false);
     setEvidenceItem(null);
-    setEvidenceToast("");
     // Auto-focus input after render
     scheduleTimer(() => inputRef.current?.focus(), 100);
   }
@@ -1128,24 +1064,7 @@ export default function App() {
     setHistoryOpen(false);
     setEvidenceItem(null);
     setEvidenceOpen(false);
-    setEvidenceToast("");
     loadHistoricalConversation(conversation);
-  }
-
-  function handleQueueOne(item) {
-    setEvidenceToast(`已加入待办队列 · ${item.id}`);
-    showToast(`已加入待办队列 · ${item.id}`);
-  }
-
-  function handleCopyEvidence(item) {
-    const text = buildAuditText({
-      query: activeConversation?.messages?.find((m) => m.role === "user")?.content || "",
-      filters: DEFAULT_FILTERS,
-      item
-    });
-    copyText(text, "已复制证据包");
-    setEvidenceToast("已复制");
-    scheduleTimer(() => setEvidenceToast(""), 2000);
   }
 
   function handleCopyAudit(msg) {
@@ -1161,43 +1080,6 @@ export default function App() {
       )
       .join("\n\n---\n\n");
     copyText(text, "已复制审计包");
-  }
-
-  async function handleCreateExport(taskId, format) {
-    if (!taskId) return;
-    try {
-      const label = format === "word" ? "Word" : "Excel";
-      showToast(`正在生成 ${label} 文件`);
-      const result = await createScreeningExport({ taskId, format });
-      showToast(`已生成 ${label}：${result?.file_name || result?.export_id || taskId}`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error || "导出失败");
-      showToast(`导出失败：${message}`);
-    }
-  }
-
-  async function handleSubmitFeedback(item, feedbackType) {
-    if (!item?.taskId) return;
-    const labels = {
-      useful: "结果有用",
-      missing_evidence: "证据不足",
-      not_relevant: "不相关"
-    };
-    try {
-      await submitScreeningFeedback({
-        taskId: item.taskId,
-        resultId: item.id,
-        feedbackType,
-        comment: labels[feedbackType] || feedbackType
-      });
-      const message = `已提交反馈：${labels[feedbackType] || feedbackType}`;
-      setEvidenceToast(message);
-      showToast(message);
-      scheduleTimer(() => setEvidenceToast(""), 2000);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error || "反馈提交失败");
-      showToast(`反馈提交失败：${message}`);
-    }
   }
 
   function handleKnowledgeBaseChange(kbId) {
@@ -1489,7 +1371,6 @@ export default function App() {
             onKnowledgeBaseChange={handleKnowledgeBaseChange}
             isKnowledgeBaseLoading={knowledgeBaseLoading}
             knowledgeBaseError={knowledgeBaseError}
-            onCreateExport={handleCreateExport}
           />
         </div>
 
@@ -1498,10 +1379,6 @@ export default function App() {
           <EvidencePanel
             item={evidenceItem}
             onClose={() => setEvidenceOpen(false)}
-            onQueueOne={handleQueueOne}
-            onCopyEvidence={handleCopyEvidence}
-            onSubmitFeedback={handleSubmitFeedback}
-            toastMessage={evidenceToast}
           />
         </div>
       </main>

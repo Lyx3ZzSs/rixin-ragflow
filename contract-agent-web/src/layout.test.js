@@ -54,14 +54,17 @@ test("empty prompt surface stays visually sparse", () => {
   assert.ok(!css.includes(".welcome-prompts"), "legacy prompt-chip grid CSS should be removed");
 });
 
-test("phase two export actions are exposed from completed screening results", () => {
-  assert.match(appSource, /导出 Excel/, "Excel export button should be available");
-  assert.match(appSource, /导出 Word/, "Word export button should be available");
-  assert.match(appSource, /createScreeningExport/, "export API adapter should be wired");
-  assert.match(appSource, /const canExport = message\.taskId && resultItems\.length > 0;/, "exports should require a task result");
+test("result messages do not expose low-value Excel or Word exports", () => {
+  assert.ok(!appSource.includes("导出 Excel"), "Excel export button should not be shown in the chat result");
+  assert.ok(!appSource.includes("导出 Word"), "Word export button should not be shown in the chat result");
+  assert.ok(!appSource.includes("createScreeningExport"), "App should not call the export API from result cards");
+  assert.ok(!appSource.includes("result-export-bar"), "result cards should not reserve an export action bar");
+  assert.ok(!css.includes(".result-export-bar"), "unused export action bar styling should be removed");
+  assert.ok(!appSource.includes("onCreateExport"), "result cards should not receive export handlers");
+  assert.ok(!appSource.includes("handleCreateExport"), "App should not keep a result export handler");
   assert.ok(!appSource.includes("onExportReport"), "legacy report export handler should not be wired into result cards");
   assert.ok(!appSource.includes("handleExportReport"), "legacy report export handler should be removed");
-  assert.ok(!apiSource.includes("exportScreeningReport"), "report export API adapter should be removed");
+  assert.match(apiSource, /createScreeningExport/, "export API adapter should remain available for backend compatibility");
   assert.ok(!apiSource.includes("/export?format="), "report export endpoint should not be called from the frontend");
 });
 
@@ -80,6 +83,21 @@ test("result cards expose original file downloads without opening evidence", () 
   assert.match(appSource, /item\.downloadUrl &&/, "download action should require a mapped download URL");
   assert.match(appSource, /event\.stopPropagation\(\)/, "download clicks should not trigger evidence viewing");
   assert.match(appSource, /className="btn btn-secondary btn-small download-file-button"/, "download action should use compact button styling");
+});
+
+test("evidence panel does not show placeholder review actions", () => {
+  assert.ok(!appSource.includes("下一步动作"), "evidence panel should not show action suggestions");
+  assert.ok(!appSource.includes("待人工复核"), "evidence panel should not invent a manual review fallback");
+  assert.ok(!appSource.includes("加入待办"), "evidence panel should not expose a fake todo queue");
+  assert.ok(!appSource.includes("已加入待办队列"), "todo queue toast should be removed with the action");
+});
+
+test("evidence panel does not expose low-value feedback actions", () => {
+  assert.ok(!appSource.includes("复制证据"), "evidence panel should not show a copy evidence button");
+  assert.ok(!appSource.includes("结果有用"), "evidence panel should not show useful feedback");
+  assert.ok(!appSource.includes("证据不足"), "evidence panel should not show missing evidence feedback");
+  assert.ok(!appSource.includes("不相关"), "evidence panel should not show not relevant feedback");
+  assert.ok(!appSource.includes("submitScreeningFeedback"), "App should not call the feedback API from evidence details");
 });
 
 test("favicon uses the Vite base URL for the /contract-agent mount", () => {

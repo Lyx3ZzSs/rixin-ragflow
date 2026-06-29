@@ -89,24 +89,46 @@ export function strategyToText(strategy) {
       .join("\n");
   }
 
+  const targetEntities = normalizeTargetEntities(strategy.intent);
+  const contractTypes = normalizeContractTypes(strategy.intent);
+  const conditionLabels = Array.isArray(strategy.conditions)
+    ? strategy.conditions.map(conditionToText).filter(Boolean)
+    : [];
+  const maxEvidence = strategy.evidence_policy?.max_evidence_per_contract;
   const lines = [];
-  if (strategy.query) {
-    lines.push(`查询: ${strategy.query}`);
+  if (targetEntities.length > 0) {
+    lines.push(`识别目标: ${targetEntities.join("、")}`);
+  } else if (strategy.query) {
+    lines.push(`识别目标: ${strategy.query}`);
   }
-  if (Array.isArray(strategy.conditions) && strategy.conditions.length > 0) {
-    lines.push(`条件: ${strategy.conditions.map(conditionToText).filter(Boolean).join("; ")}`);
+  if (contractTypes.length > 0) {
+    lines.push(`合同类型: ${contractTypes.join("、")}`);
   }
-  if (strategy.filters && Object.keys(strategy.filters).length > 0) {
-    lines.push(`过滤: ${objectToText(strategy.filters)}`);
+  lines.push("检索范围: 合同标题、合同正文、审批记录、履约记录");
+  if (conditionLabels.length > 0) {
+    lines.push(`匹配规则: 优先匹配${conditionLabels.join("、")}`);
+  } else {
+    lines.push("匹配规则: 优先匹配用户描述中的合同主体、项目名称和关键条款");
   }
-  if (strategy.evidence_policy) {
-    lines.push(`证据策略: ${valueToText(strategy.evidence_policy)}`);
+  if (maxEvidence !== undefined && maxEvidence !== null) {
+    lines.push(`证据规则: 每份合同最多展示 ${valueToText(maxEvidence)} 条引用证据`);
   }
-  if (strategy.limit_per_condition !== undefined && strategy.limit_per_condition !== null) {
-    lines.push(`每条件证据上限: ${valueToText(strategy.limit_per_condition)}`);
-  }
-
   return lines.join("\n");
+}
+
+function normalizeTargetEntities(intent) {
+  const entities = Array.isArray(intent?.target_entities) ? intent.target_entities : [];
+  return entities
+    .map((entity) => {
+      if (typeof entity === "string") return entity.trim();
+      return String(entity?.name || "").trim();
+    })
+    .filter(Boolean);
+}
+
+function normalizeContractTypes(intent) {
+  const contractTypes = Array.isArray(intent?.contract_types) ? intent.contract_types : [];
+  return contractTypes.map((item) => String(item || "").trim()).filter(Boolean);
 }
 
 function conditionToText(condition) {

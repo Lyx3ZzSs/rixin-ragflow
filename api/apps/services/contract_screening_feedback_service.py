@@ -87,7 +87,14 @@ def _normalize_feedback_payload(payload: dict[str, Any]) -> dict[str, str]:
 
 def _find_result(payload: dict[str, Any], result_id: str) -> dict[str, Any] | None:
     for item in payload.get("items") or []:
-        if isinstance(item, dict) and str(item.get("id") or "") == result_id:
+        if not isinstance(item, dict):
+            continue
+        identifiers = (
+            item.get("id"),
+            item.get("contract_id"),
+            item.get("document_id"),
+        )
+        if any(str(identifier or "") == result_id for identifier in identifiers):
             return item
     return None
 

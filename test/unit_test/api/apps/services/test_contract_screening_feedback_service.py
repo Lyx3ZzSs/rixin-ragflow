@@ -70,6 +70,26 @@ def test_create_screening_feedback_saves_result_feedback():
     assert repository.build_calls == [("tenant-1", "task-1", "user-1")]
 
 
+def test_create_screening_feedback_accepts_document_id_for_runtime_results():
+    repository = FakeRepository()
+
+    result = create_screening_feedback(
+        tenant_id="tenant-1",
+        user_id="user-1",
+        task_id="task-1",
+        payload={
+            "result_id": "doc-1",
+            "feedback_type": "not_relevant",
+            "comment": "不是目标合同",
+        },
+        repository=repository,
+    )
+
+    assert result["result_id"] == "doc-1"
+    assert result["feedback_type"] == "not_relevant"
+    assert repository.records[0]["result_id"] == "doc-1"
+
+
 def test_create_screening_feedback_rejects_unknown_type():
     with pytest.raises(ContractScreeningError, match="Unsupported feedback type"):
         create_screening_feedback(

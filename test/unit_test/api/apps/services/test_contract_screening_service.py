@@ -156,6 +156,26 @@ def test_build_strategy_prefers_user_confirmed_conditions():
     assert strategy["evidence_policy"]["max_evidence_per_contract"] == 2
 
 
+def test_build_strategy_extracts_project_and_contract_type_intent():
+    task = create_initial_task(
+        task_id="task-1",
+        tenant_id="tenant-1",
+        user_id="user-1",
+        kb_id="kb-1",
+        prompt="筛出中广核新能源如东光伏电站200MWp项目采购合同",
+        filters={"risk": "全部", "status": "全部", "source": "全部"},
+    )
+
+    strategy = build_strategy(task)
+
+    assert strategy["intent"]["target_entities"] == [
+        {"type": "project", "name": "中广核新能源如东光伏电站200MWp项目"}
+    ]
+    assert strategy["intent"]["contract_types"] == ["采购合同"]
+    assert "采购合同" in [condition["label"] for condition in strategy["conditions"]]
+    assert "合同正文、审批和履约相关表达" not in [condition["label"] for condition in strategy["conditions"]]
+
+
 def test_store_roundtrips_task():
     redis = FakeRedis()
     store = ContractScreeningStore(redis=redis, ttl_seconds=60)

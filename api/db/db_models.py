@@ -1553,6 +1553,40 @@ def alter_db_rename_column(migrator, table_name, old_column_name, new_column_nam
         # logging.critical(f"Failed to rename {settings.DATABASE_TYPE.upper()}.{table_name} column {old_column_name} to {new_column_name}, error: {ex}")
         pass
 
+
+def migrate_contract_screening_feedback(migrator):
+    table_name = "contract_screening_feedback"
+    try:
+        existing_columns = {column.name for column in DB.get_columns(table_name)}
+    except Exception as ex:
+        logging.critical(f"Failed to inspect {settings.DATABASE_TYPE.upper()}.{table_name} columns, error: {ex}")
+        return
+
+    if "result_id" not in existing_columns:
+        alter_db_add_column(migrator, table_name, "result_id", CharField(max_length=32, null=True, default="", index=True))
+    if "evidence_id" not in existing_columns:
+        alter_db_add_column(migrator, table_name, "evidence_id", CharField(max_length=32, null=True, default="", index=True))
+    has_feedback_type = "feedback_type" in existing_columns
+    if not has_feedback_type:
+        alter_db_add_column(migrator, table_name, "feedback_type", CharField(max_length=64, null=False, default="", index=True))
+        has_feedback_type = True
+
+    # Legacy local tables used rating/created_at with NOT NULL and no default.
+    # Make them compatible with inserts driven by the current Peewee model.
+    if "rating" in existing_columns:
+        alter_db_column_type(migrator, table_name, "rating", CharField(max_length=64, null=True, default=""))
+    if "created_at" in existing_columns:
+        alter_db_column_type(migrator, table_name, "created_at", FloatField(null=True, default=0))
+    if "rating" in existing_columns and has_feedback_type:
+        try:
+            DB.execute_sql(
+                f"UPDATE {table_name} SET feedback_type = rating "
+                "WHERE (feedback_type IS NULL OR feedback_type = '') AND rating IS NOT NULL"
+            )
+        except Exception as ex:
+            logging.critical(f"Failed to backfill {settings.DATABASE_TYPE.upper()}.{table_name}.feedback_type, error: {ex}")
+
+
 def migrate_add_unique_email(migrator):
     """Deduplicates user emails and add UNIQUE constraint to email column (idempotent)"""
     # step 0: check existing index state on user.email and prepare for unique constraint
@@ -1838,6 +1872,7 @@ def migrate_db():
     alter_db_column_type(migrator, "document", "size", BigIntegerField(default=0, index=True))
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
     alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
+    migrate_contract_screening_feedback(migrator)
     # Drop both the explicit "idx_*" name from later migrations AND the
     # Peewee-auto-derived "<table-as-classname>_<col1>_<col2>" name from the
     # original TenantModelInstance definition (commit dc4b82523). Databases

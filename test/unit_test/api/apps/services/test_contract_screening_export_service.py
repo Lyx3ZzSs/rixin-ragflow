@@ -108,6 +108,8 @@ def test_create_screening_export_writes_excel_sheets(tmp_path):
     workbook = openpyxl.load_workbook(result["file_key"])
     assert workbook.sheetnames == ["筛选摘要", "合同结果", "证据明细"]
     assert workbook["筛选摘要"]["B1"].value == "筛选付款周期超过60天的合同"
+    result_headers = [cell.value for cell in workbook["合同结果"][1]]
+    assert "建议动作" not in result_headers
     assert workbook["合同结果"]["A2"].value == "采购合同.pdf"
     assert workbook["证据明细"]["F2"].value == "付款期限为验收合格后90日内。"
     assert repository.updated[0][0] == result["export_id"]

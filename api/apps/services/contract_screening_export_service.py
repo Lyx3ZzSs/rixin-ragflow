@@ -113,7 +113,7 @@ def _write_excel(payload: dict[str, Any], file_path: Path) -> None:
     summary.append(["筛选条件", _conditions_text(payload)])
 
     results = workbook.create_sheet("合同结果")
-    results.append(["合同名称", "文档 id", "命中状态", "风险", "分数", "原因", "建议动作"])
+    results.append(["合同名称", "文档 id", "命中状态", "风险", "分数", "原因"])
     for item in payload.get("items") or []:
         results.append([
             item.get("name") or item.get("title") or "",
@@ -122,7 +122,6 @@ def _write_excel(payload: dict[str, Any], file_path: Path) -> None:
             item.get("risk") or (item.get("meta") or {}).get("risk", ""),
             item.get("score") or (item.get("meta") or {}).get("score", ""),
             item.get("reason") or "",
-            "；".join(item.get("actions") or []),
         ])
 
     evidence_sheet = workbook.create_sheet("证据明细")

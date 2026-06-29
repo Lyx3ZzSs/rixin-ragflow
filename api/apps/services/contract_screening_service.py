@@ -31,6 +31,19 @@ TASK_TTL_SECONDS = 60 * 60 * 24
 TASK_STALE_SECONDS = 30 * 60
 TASK_HEARTBEAT_SECONDS = 30
 ACTIVE_TASK_STATUSES = {"pending", "running"}
+CONTRACT_TYPE_KEYWORDS = [
+    "设备采购合同",
+    "物资采购合同",
+    "采购合同",
+    "采购协议",
+    "服务合同",
+    "施工合同",
+    "运维合同",
+    "租赁合同",
+    "销售合同",
+    "框架协议",
+    "补充协议",
+]
 
 
 class ContractScreeningError(Exception):
@@ -239,6 +252,7 @@ def build_strategy(task: Any) -> dict[str, Any]:
     filters = _field_value(task, "filters")
     if not isinstance(filters, dict):
         filters = {}
+    intent = _extract_query_intent(prompt)
     confirmed_conditions = _field_value(task, "conditions")
     confirmed_evidence_policy = _field_value(task, "evidence_policy")
     if isinstance(confirmed_conditions, list) and confirmed_conditions:
@@ -253,6 +267,7 @@ def build_strategy(task: Any) -> dict[str, Any]:
                 evidence_policy["text_fields"] = ["content", "content_with_weight", "text"]
         return {
             "query": prompt,
+            "intent": intent,
             "conditions": confirmed_conditions,
             "filters": dict(filters),
             "evidence_policy": evidence_policy,
@@ -284,6 +299,19 @@ def build_strategy(task: Any) -> dict[str, Any]:
             "label": "补充协议、附件完整性",
             "keywords": ["补充协议", "附件"],
         })
+    for contract_type in intent["contract_types"]:
+        conditions.append({
+            "id": "contract_type",
+            "label": contract_type,
+            "keywords": _contract_type_keywords(contract_type),
+        })
+    for entity in intent["target_entities"]:
+        if entity.get("type") == "project" and entity.get("name"):
+            conditions.append({
+                "id": "project_name",
+                "label": entity["name"],
+                "keywords": [entity["name"]],
+            })
     if not conditions:
         conditions.append({
             "id": "contract_terms",
@@ -293,6 +321,7 @@ def build_strategy(task: Any) -> dict[str, Any]:
 
     return {
         "query": prompt,
+        "intent": intent,
         "conditions": conditions,
         "filters": dict(filters),
         "evidence_policy": {
@@ -302,6 +331,43 @@ def build_strategy(task: Any) -> dict[str, Any]:
         },
         "limit_per_condition": 20,
     }
+
+
+def _extract_query_intent(prompt: str) -> dict[str, Any]:
+    contract_types = [contract_type for contract_type in CONTRACT_TYPE_KEYWORDS if contract_type in prompt]
+    target_entities = []
+    project_name = _extract_project_name(prompt, contract_types)
+    if project_name:
+        target_entities.append({"type": "project", "name": project_name})
+    return {
+        "target_entities": target_entities,
+        "contract_types": contract_types,
+    }
+
+
+def _extract_project_name(prompt: str, contract_types: list[str]) -> str:
+    if not contract_types or "项目" not in prompt:
+        return ""
+    first_type_index = min(prompt.find(contract_type) for contract_type in contract_types if prompt.find(contract_type) >= 0)
+    candidate = prompt[:first_type_index].strip()
+    for prefix in ("请帮我", "帮我", "请", "筛出", "筛选", "查找", "找出", "查询", "检索", "匹配", "定位"):
+        if candidate.startswith(prefix):
+            candidate = candidate[len(prefix):].strip()
+            break
+    candidate = candidate.strip(" ，,。.;；:：的")
+    if "项目" not in candidate:
+        return ""
+    return candidate
+
+
+def _contract_type_keywords(contract_type: str) -> list[str]:
+    keyword_map = {
+        "采购合同": ["采购合同", "采购协议", "设备采购合同", "物资采购合同"],
+        "设备采购合同": ["设备采购合同", "设备采购", "采购合同"],
+        "物资采购合同": ["物资采购合同", "物资采购", "采购合同"],
+        "采购协议": ["采购协议", "采购合同"],
+    }
+    return keyword_map.get(contract_type, [contract_type])
 
 
 def _chunk_document_id(chunk: Any) -> str:

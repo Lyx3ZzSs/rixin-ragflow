@@ -77,9 +77,13 @@ test("strategyToText returns empty text for empty strategy", () => {
   assert.equal(strategyToText(undefined), "");
 });
 
-test("strategyToText serializes structured backend strategy", () => {
+test("strategyToText renders structured backend strategy as a business summary", () => {
   const text = strategyToText({
     query: "筛选即将到期的高风险采购合同",
+    intent: {
+      target_entities: [{ type: "project", name: "中广核新能源如东光伏电站200MWp项目" }],
+      contract_types: ["采购合同"]
+    },
     conditions: [
       { id: "risk", label: "高风险", keywords: ["高风险", "续签"] },
       { id: "expiry", label: "90 天内到期", keywords: ["到期"] }
@@ -97,14 +101,15 @@ test("strategyToText serializes structured backend strategy", () => {
     limit_per_condition: 20
   });
 
-  assert.match(text, /查询: 筛选即将到期的高风险采购合同/);
-  assert.match(text, /条件: 高风险; 90 天内到期/);
-  assert.match(text, /过滤: risk=全部; status=全部; source=全部/);
-  assert.match(text, /证据策略: .*group_by=document/);
-  assert.match(text, /证据策略: .*text_fields=content, content_with_weight, text/);
-  assert.match(text, /证据策略: .*max_evidence_per_contract=5/);
+  assert.match(text, /识别目标: 中广核新能源如东光伏电站200MWp项目/);
+  assert.match(text, /合同类型: 采购合同/);
+  assert.match(text, /检索范围: 合同标题、合同正文、审批记录、履约记录/);
+  assert.match(text, /匹配规则: 优先匹配高风险、90 天内到期/);
+  assert.match(text, /证据规则: 每份合同最多展示 5 条引用证据/);
+  assert.doesNotMatch(text, /group_by=document/);
+  assert.doesNotMatch(text, /text_fields=content/);
   assert.doesNotMatch(text, /\[object Object\]/);
-  assert.match(text, /每条件证据上限: 20/);
+  assert.doesNotMatch(text, /每条件证据上限/);
 });
 
 test("buildConversationTitle trims prompts and truncates long titles", () => {
