@@ -113,6 +113,17 @@ test("evidence panel does not expose low-value feedback actions", () => {
   assert.ok(!appSource.includes("submitScreeningFeedback"), "App should not call the feedback API from evidence details");
 });
 
+test("evidence panel uses grouped evidence components without low-value actions", () => {
+  const evidencePanelSource = readFileSync(new URL("./components/evidence/EvidencePanel.jsx", import.meta.url), "utf8");
+  const evidenceGroupSource = readFileSync(new URL("./components/evidence/EvidenceGroupList.jsx", import.meta.url), "utf8");
+
+  assert.match(evidencePanelSource, /function EvidencePanel/, "EvidencePanel should own evidence detail rendering");
+  assert.match(evidenceGroupSource, /groupEvidenceBySource/, "evidence should be grouped by source");
+  assert.ok(!evidencePanelSource.includes("复制证据"), "copy evidence action should not be added");
+  assert.ok(!evidencePanelSource.includes("加入待办"), "fake todo action should not be added");
+  assert.ok(!evidencePanelSource.includes("结果有用"), "feedback action should not be added");
+});
+
 test("favicon uses the Vite base URL for the /contract-agent mount", () => {
   assert.match(
     indexHtml,

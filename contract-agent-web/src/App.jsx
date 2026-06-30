@@ -6,17 +6,15 @@ import {
   buildAuditText,
   buildConversationTitle,
   filterContracts,
-  normalizeTimelineItems,
   resolvePollingConfig,
   strategyToText,
   taskPhaseToLabel
 } from "./logic.js";
+import { EvidencePanel } from "./components/evidence/EvidencePanel.jsx";
 import { ResultSet } from "./components/results/ResultSet.jsx";
-import { KeyValue } from "./components/ui/KeyValue.jsx";
 import { Toast } from "./components/ui/Toast.jsx";
 import {
   HistoryIcon,
-  ChevronRightIcon,
   SendIcon,
   DocumentIcon,
   TrashIcon,
@@ -142,101 +140,6 @@ function ConversationHistory({ conversations, activeId, onSelect, onNew, onDelet
         <button className="btn btn-secondary btn-small" type="button" onClick={onLogout}>
           <LogoutIcon /> 注销
         </button>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Evidence Panel (right) ──────────────────────────────────────── */
-
-function EvidencePanel({ item, onClose }) {
-  if (!item) {
-    return (
-      <div className="evidence-panel">
-        <div className="evidence-header">
-          <p className="meta">证据详情</p>
-          <button className="sidebar-toggle" type="button" aria-label="收起面板" onClick={onClose}>
-            <ChevronRightIcon />
-          </button>
-        </div>
-        <div className="evidence-body">
-          <div className="state-panel" style={{ minHeight: "200px" }}>
-            <strong>选择合同查看证据</strong>
-            <span>在对话结果中点击"查看证据"，将在此处展示合同条款、审批记录、履约信息和供应商评级。</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const evidenceItems = Array.isArray(item.evidence) ? item.evidence : [];
-  const timelineItems = normalizeTimelineItems(item.timeline);
-
-  return (
-    <div className="evidence-panel">
-      <div className="evidence-header">
-        <div>
-          <p className="meta">证据详情</p>
-          <h3 style={{ fontSize: "var(--text-base)", fontFamily: "var(--font-body)", fontWeight: 500, letterSpacing: "normal", marginTop: "4px" }}>
-            {item.title}
-          </h3>
-        </div>
-        <button className="sidebar-toggle" type="button" aria-label="收起面板" onClick={onClose}>
-          <ChevronRightIcon />
-        </button>
-      </div>
-      <div className="evidence-body">
-        <div className="detail-section">
-          <KeyValue label="合同编号" value={item.id} />
-          <KeyValue label="供应商" value={item.supplier} />
-          <KeyValue label="合同金额" value={item.amount} />
-          <KeyValue label="到期日期" value={item.expiry} />
-          <KeyValue label="访问权限" value={item.permissions} />
-          <KeyValue label="匹配度" value={`${item.score}%`} />
-        </div>
-
-        <div className="detail-section">
-          <p className="meta">命中解释</p>
-          <p className="body-copy mt-2">{item.reason}</p>
-        </div>
-
-        <div className="detail-section">
-          <p className="meta">引用证据</p>
-          <ul className="source-list">
-            {evidenceItems.map((evidence, index) => (
-              <li className="source-item" key={`${evidence.source || "证据"}-${evidence.ref || index}`}>
-                <strong>
-                  {evidence.source || "合同正文"} · {evidence.ref || "未标注位置"}
-                </strong>
-                <span>{evidence.text}</span>
-              </li>
-            ))}
-            {evidenceItems.length === 0 && (
-              <li className="source-item">
-                <strong>暂无引用证据</strong>
-                <span>后端未返回证据片段。</span>
-              </li>
-            )}
-          </ul>
-        </div>
-
-        <div className="detail-section">
-          <p className="meta">关键节点</p>
-          <div className="timeline">
-            {timelineItems.map(([label, value]) => (
-              <div className="timeline-item" key={label}>
-                <span>{label}</span>
-                <strong>{value}</strong>
-              </div>
-            ))}
-            {timelineItems.length === 0 && (
-              <div className="timeline-item">
-                <span>筛选任务</span>
-                <strong>已完成</strong>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
     </div>
   );

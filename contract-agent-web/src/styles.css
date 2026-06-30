@@ -668,6 +668,22 @@ svg { display: block; stroke-width: 1.5; }
   font-size: var(--text-sm);
   line-height: 20px;
 }
+.evidence-groups {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.evidence-group {
+  display: grid;
+  gap: var(--space-2);
+}
+.evidence-group h4 {
+  margin: 0;
+  color: var(--color-ink-black);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 20px;
+}
 .timeline {
   display: grid;
   gap: var(--space-2);
