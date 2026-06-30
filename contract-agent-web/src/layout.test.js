@@ -176,3 +176,13 @@ test("task context uses parsed condition and evidence policy metadata", () => {
   assert.match(appSource, /conditionCount:\s*latestContextMessage\?\.conditionCount\s*\?\?\s*0/, "task context should use persisted condition count");
   assert.match(appSource, /evidencePolicy:\s*latestContextMessage\?\.evidencePolicy\s*\|\|\s*null/, "task context should use persisted evidence policy");
 });
+
+test("task context status comes from terminal messages and active streaming task", () => {
+  assert.match(appSource, /taskStatus:\s*"done"/, "successful result messages should persist done status");
+  assert.match(appSource, /历史任务加载失败[\s\S]*?taskStatus:\s*"failed"/, "historical load failures should persist failed status");
+  assert.match(appSource, /筛选失败：\$\{message\}[\s\S]*?taskStatus:\s*"failed"/, "screening task failures should persist failed status");
+  assert.match(appSource, /条件解析失败：\$\{message\}[\s\S]*?taskStatus:\s*"failed"/, "parse failures should persist failed status");
+  assert.match(appSource, /const activeConversationIsStreaming = isStreaming && streamingConversationId === activeConversationId/, "running status should be scoped to the active conversation");
+  assert.match(appSource, /taskStatus:\s*activeConversationIsStreaming\s*\?\s*"running"/, "task context should only show running for the active streaming conversation");
+  assert.ok(!appSource.includes('taskStatus: isStreaming ? "running"'), "global streaming state should not mark inactive conversations as running");
+});

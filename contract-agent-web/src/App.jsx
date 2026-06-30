@@ -56,6 +56,10 @@ function buildInitialConversations() {
             "权限裁剪：仅展示当前角色可访问的合同与附件片段",
             "综合排序：按风险等级、到期紧迫度、匹配分降序"
           ],
+          taskStatus: "done",
+          resultCount: allResults.length,
+          conditionCount: 0,
+          evidencePolicy: null,
           results: allResults
         }
       ]
@@ -81,6 +85,10 @@ function buildInitialConversations() {
             "权限裁剪：仅展示当前角色可访问的合同与附件片段",
             "综合排序：按风险等级、匹配分降序"
           ],
+          taskStatus: "done",
+          resultCount: highRiskResults.length,
+          conditionCount: 0,
+          evidencePolicy: null,
           results: highRiskResults
         }
       ]
@@ -356,6 +364,8 @@ export default function App() {
           taskId,
           content: items.length > 0 ? `筛选完成，命中 ${items.length} 份合同。` : "筛选完成，没有命中合同。",
           strategy: result?.strategy,
+          taskStatus: "done",
+          resultCount: items.length,
           conditionCount: resultConditions.length,
           evidencePolicy: resultEvidencePolicy,
           results: items
@@ -376,7 +386,11 @@ export default function App() {
                   {
                     id: `${taskId}-load-error`,
                     role: "agent",
-                    content: `历史任务加载失败：${message}`
+                    content: `历史任务加载失败：${message}`,
+                    taskStatus: "failed",
+                    resultCount: 0,
+                    conditionCount: 0,
+                    evidencePolicy: null
                   }
                 ]
               }
@@ -535,6 +549,8 @@ export default function App() {
         taskId,
         content: items.length > 0 ? `筛选完成，命中 ${items.length} 份合同。` : "筛选完成，没有命中合同。",
         strategy: result?.strategy,
+        taskStatus: "done",
+        resultCount: items.length,
         conditionCount: conditions.length,
         evidencePolicy,
         results: items
@@ -550,7 +566,11 @@ export default function App() {
         {
           id: nextMessageId(),
           role: "agent",
-          content: `筛选失败：${message}`
+          content: `筛选失败：${message}`,
+          taskStatus: "failed",
+          resultCount: 0,
+          conditionCount: conditions.length,
+          evidencePolicy
         }
       ]);
       showToast("筛选失败");
@@ -576,7 +596,11 @@ export default function App() {
         {
           id: nextMessageId(),
           role: "agent",
-          content: "请在地址栏添加 ?kb_id=<知识库ID> 后再筛选，后续会接入知识库选择器。"
+          content: "请在地址栏添加 ?kb_id=<知识库ID> 后再筛选，后续会接入知识库选择器。",
+          taskStatus: "failed",
+          resultCount: 0,
+          conditionCount: 0,
+          evidencePolicy: null
         }
       ]);
       return;
@@ -618,7 +642,11 @@ export default function App() {
         {
           id: nextMessageId(),
           role: "agent",
-          content: `条件解析失败：${message}`
+          content: `条件解析失败：${message}`,
+          taskStatus: "failed",
+          resultCount: 0,
+          conditionCount: 0,
+          evidencePolicy: null
         }
       ]);
       showToast("条件解析失败");
@@ -632,13 +660,13 @@ export default function App() {
   }
 
   const selectedKnowledgeBase = knowledgeBases.find((kb) => kb.id === selectedKnowledgeBaseId);
-  const latestAgentMessage = [...messages].reverse().find((message) => message.role === "agent" && Array.isArray(message.results));
-  const latestContextMessage = [...messages].reverse().find((message) => message.role === "agent" && (Number.isFinite(Number(message.conditionCount)) || message.evidencePolicy));
-  const latestResults = Array.isArray(latestAgentMessage?.results) ? latestAgentMessage.results : [];
+  const activeConversationIsStreaming = isStreaming && streamingConversationId === activeConversationId;
+  const latestContextMessage = [...messages].reverse().find((message) => message.role === "agent" && (message.taskStatus || Number.isFinite(Number(message.resultCount)) || Number.isFinite(Number(message.conditionCount)) || message.evidencePolicy));
+  const latestContextResults = Array.isArray(latestContextMessage?.results) ? latestContextMessage.results : [];
   const taskContext = {
     knowledgeBaseName: selectedKnowledgeBase?.name || (selectedKnowledgeBaseId ? "当前知识库" : "未选择知识库"),
-    taskStatus: isStreaming ? "running" : activeConversation?.status || (latestAgentMessage ? "done" : ""),
-    resultCount: latestResults.length,
+    taskStatus: activeConversationIsStreaming ? "running" : latestContextMessage?.taskStatus || activeConversation?.status || "",
+    resultCount: latestContextMessage?.resultCount ?? latestContextResults.length,
     conditionCount: latestContextMessage?.conditionCount ?? 0,
     evidencePolicy: latestContextMessage?.evidencePolicy || null
   };
