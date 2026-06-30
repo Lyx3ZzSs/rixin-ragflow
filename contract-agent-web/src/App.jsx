@@ -12,6 +12,21 @@ import {
   strategyToText,
   taskPhaseToLabel
 } from "./logic.js";
+import { Toast } from "./components/ui/Toast.jsx";
+import {
+  HistoryIcon,
+  ChevronRightIcon,
+  SendIcon,
+  DocumentIcon,
+  DownloadIcon,
+  TrashIcon,
+  NewChatIcon,
+  EyeIcon,
+  CheckIcon,
+  SearchIcon,
+  BrainIcon,
+  LogoutIcon
+} from "./icons.jsx";
 
 const DEFAULT_FILTERS = {
   risk: "全部",
@@ -21,134 +36,6 @@ const DEFAULT_FILTERS = {
 
 const TERMINAL_TASK_STATUSES = new Set(["done", "failed", "cancelled"]);
 const POLLING_CONFIG = resolvePollingConfig(import.meta.env);
-
-/* ─── SVG icons ──────────────────────────────────────────────────── */
-
-function HistoryIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12,6 12,12 16,14" />
-    </svg>
-  );
-}
-
-function ChevronLeftIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <polyline points="15,18 9,12 15,6" />
-    </svg>
-  );
-}
-
-function ChevronRightIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <polyline points="9,18 15,12 9,6" />
-    </svg>
-  );
-}
-
-function SendIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <line x1="22" y1="2" x2="11" y2="13" />
-      <polygon points="22,2 15,22 11,13 2,9" />
-    </svg>
-  );
-}
-
-function DocumentIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <path d="M6 3h8l4 4v14H6z" />
-      <path d="M14 3v5h5M9 12h6M9 16h4" />
-    </svg>
-  );
-}
-
-function DownloadIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="7,10 12,15 17,10" />
-      <line x1="12" y1="15" x2="12" y2="3" />
-    </svg>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <polyline points="3,6 5,6 21,6" />
-      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-    </svg>
-  );
-}
-
-function NewChatIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  );
-}
-
-function AgentIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-      <rect x="2" y="3" width="20" height="14" rx="2" />
-      <line x1="8" y1="21" x2="16" y2="21" />
-      <line x1="12" y1="17" x2="12" y2="21" />
-    </svg>
-  );
-}
-
-function EyeIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-      <polyline points="20,6 9,17 4,12" />
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <circle cx="11" cy="11" r="8" />
-      <line x1="21" y1="21" x2="16.65" y2="16.65" />
-    </svg>
-  );
-}
-
-function BrainIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="M12 2a4 4 0 0 1 4 4c0 1.1-.5 2.1-1.2 2.8l1.8 6.2H7.4l1.8-6.2A3.9 3.9 0 0 1 8 6a4 4 0 0 1 4-4z" />
-      <path d="M9 15h6v3a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-3z" />
-    </svg>
-  );
-}
-
-function LogoutIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-      <polyline points="16,17 21,12 16,7" />
-      <line x1="21" y1="12" x2="9" y2="12" />
-    </svg>
-  );
-}
 
 /* ─── Header ─────────────────────────────────────────────────────── */
 
@@ -618,16 +505,6 @@ function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit }) {
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-/* ─── Toast ──────────────────────────────────────────────────────── */
-
-function Toast({ message, visible }) {
-  return (
-    <div className={`toast${visible ? " show" : ""}`} role="status" aria-live="polite">
-      {message}
     </div>
   );
 }
