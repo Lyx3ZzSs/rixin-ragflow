@@ -40,8 +40,10 @@ test("responsive overlay breakpoint stays below normal desktop widths", () => {
 });
 
 test("empty state is a minimal prompt-first chat surface", () => {
-  assert.match(appSource, /className="welcome-center"/, "empty state should render the minimal prompt surface");
-  assert.match(appSource, /要筛选哪些合同？/, "empty state should ask for the screening goal");
+  const emptyPromptSource = readFileSync(new URL("./components/chat/EmptyPrompt.jsx", import.meta.url), "utf8");
+
+  assert.match(emptyPromptSource, /className="welcome-center"/, "empty state should render the minimal prompt surface");
+  assert.match(emptyPromptSource, /要筛选哪些合同？/, "empty state should ask for the screening goal");
   assert.ok(!appSource.includes("welcome-lead"), "empty state should not include marketing helper copy");
   assert.ok(!appSource.includes("welcome-icon"), "empty state should not include decorative icons");
 });
@@ -153,4 +155,16 @@ test("ragflow dev proxy preserves /contract-agent before forwarding", () => {
     !ragflowViteConfig.includes("rewrite: (path) => path.replace(/^\\/contract-agent/, '') || '/',"),
     "the contract dev server needs the /contract-agent prefix to apply its Vite base",
   );
+});
+
+test("workspace and chat rendering are split into P0 components", () => {
+  const workspaceSource = readFileSync(new URL("./components/workspace/WorkspaceShell.jsx", import.meta.url), "utf8");
+  const contextBarSource = readFileSync(new URL("./components/workspace/TaskContextBar.jsx", import.meta.url), "utf8");
+  const chatViewSource = readFileSync(new URL("./components/chat/ChatView.jsx", import.meta.url), "utf8");
+  const promptComposerSource = readFileSync(new URL("./components/chat/PromptComposer.jsx", import.meta.url), "utf8");
+
+  assert.match(workspaceSource, /className=\{`workspace/, "WorkspaceShell should own workspace layout");
+  assert.match(contextBarSource, /task-context-bar/, "TaskContextBar should render task context");
+  assert.match(chatViewSource, /function ChatView/, "ChatView should own conversation layout");
+  assert.match(promptComposerSource, /知识库/, "PromptComposer should keep knowledge base selection");
 });

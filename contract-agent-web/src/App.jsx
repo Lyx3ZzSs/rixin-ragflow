@@ -1,30 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createScreeningTask, deleteScreeningTask, getKnowledgeBases, getScreeningResults, getScreeningTask, listScreeningTasks, logout, parseScreeningPrompt } from "./api.js";
 import { buildConditionTaskPayload, conditionToEditor, normalizeEvidencePolicy, normalizeParsedConditions } from "./conditions.js";
-import { contracts, promptExamples } from "./data.js";
+import { contracts } from "./data.js";
 import {
-  buildAuditText,
   buildConversationTitle,
   filterContracts,
   resolvePollingConfig,
-  strategyToText,
   taskPhaseToLabel
 } from "./logic.js";
+import { ChatView } from "./components/chat/ChatView.jsx";
 import { EvidencePanel } from "./components/evidence/EvidencePanel.jsx";
-import { ResultSet } from "./components/results/ResultSet.jsx";
 import { Toast } from "./components/ui/Toast.jsx";
-import {
-  HistoryIcon,
-  SendIcon,
-  DocumentIcon,
-  TrashIcon,
-  NewChatIcon,
-  EyeIcon,
-  CheckIcon,
-  SearchIcon,
-  BrainIcon,
-  LogoutIcon
-} from "./icons.jsx";
+import { WorkspaceShell } from "./components/workspace/WorkspaceShell.jsx";
 
 const DEFAULT_FILTERS = {
   risk: "全部",
@@ -34,362 +21,6 @@ const DEFAULT_FILTERS = {
 
 const TERMINAL_TASK_STATUSES = new Set(["done", "failed", "cancelled"]);
 const POLLING_CONFIG = resolvePollingConfig(import.meta.env);
-
-/* ─── Header ─────────────────────────────────────────────────────── */
-
-function Header({ historyOpen, evidenceOpen, onToggleHistory, onToggleEvidence }) {
-  return (
-    <header className="topnav" data-od-id="topnav">
-      <div className="container topnav-inner">
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-          <button
-            className="sidebar-toggle"
-            type="button"
-            aria-label={historyOpen ? "收起历史面板" : "展开历史面板"}
-            aria-pressed={historyOpen}
-            onClick={onToggleHistory}
-            title="对话历史"
-          >
-            <HistoryIcon />
-          </button>
-          <a className="brand" href="#" aria-label="合同智能筛选 Agent 首页">
-            <span className="brand-mark">
-              <DocumentIcon />
-            </span>
-            合同智能筛选
-          </a>
-        </div>
-        <nav aria-label="主导航">
-          <span className="status status-strong">对话式工作台</span>
-        </nav>
-        <button
-          className="sidebar-toggle"
-          type="button"
-          aria-label={evidenceOpen ? "收起证据面板" : "展开证据面板"}
-          aria-pressed={evidenceOpen}
-          onClick={onToggleEvidence}
-          title="证据详情"
-        >
-          <EyeIcon />
-        </button>
-      </div>
-    </header>
-  );
-}
-
-/* ─── Conversation History Panel (left) ───────────────────────────── */
-
-function ConversationHistory({ conversations, activeId, onSelect, onNew, onDelete, onLogout }) {
-  return (
-    <div className="history-panel">
-      <div className="sidebar-brand">
-        <button className="sidebar-menu" type="button" aria-label="展开或收起导航">
-          <HistoryIcon />
-        </button>
-        <span>合同智能筛选</span>
-      </div>
-      <nav className="sidebar-nav" aria-label="工作台导航">
-        <button className="sidebar-nav-item" type="button" onClick={onNew}>
-          <NewChatIcon /> 新建筛选
-        </button>
-        <button className="sidebar-nav-item" type="button">
-          <SearchIcon /> 搜索历史
-        </button>
-        <button className="sidebar-nav-item" type="button">
-          <DocumentIcon /> 合同库
-        </button>
-      </nav>
-      <div className="history-header">
-        <div>
-          <p className="meta">对话历史</p>
-          <h3 style={{ fontSize: "var(--text-base)", fontFamily: "var(--font-body)", fontWeight: 500, letterSpacing: "normal", marginTop: "4px" }}>
-            历史会话
-          </h3>
-        </div>
-      </div>
-      <div className="history-list" role="listbox" aria-label="历史会话列表">
-        {conversations.length === 0 ? (
-          <p className="history-empty">尚无历史会话，输入筛选目标开始。</p>
-        ) : (
-          conversations.map((conv) => (
-            <button
-              key={conv.id}
-              className={`history-item${conv.id === activeId ? " is-active" : ""}`}
-              type="button"
-              role="option"
-              aria-selected={conv.id === activeId}
-              onClick={() => onSelect(conv.id)}
-            >
-              {conv.title}
-              <span className="history-time">{conv.time}</span>
-              <span
-                className="history-delete"
-                title="删除会话"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(conv.id);
-                }}
-              >
-                <TrashIcon />
-              </span>
-            </button>
-          ))
-        )}
-      </div>
-      <div className="sidebar-footer">
-        <button className="btn btn-secondary btn-small" type="button" onClick={onLogout}>
-          <LogoutIcon /> 注销
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Chat View (middle) ─────────────────────────────────────────── */
-
-function ChatView({
-  messages,
-  isStreaming,
-  displayStreaming,
-  streamingPhases,
-  onSend,
-  onViewEvidence,
-  viewingItemId,
-  onCopyAudit,
-  inputValue,
-  setInputValue,
-  knowledgeBases,
-  selectedKnowledgeBaseId,
-  onKnowledgeBaseChange,
-  isKnowledgeBaseLoading,
-  knowledgeBaseError
-}) {
-  const bodyRef = useRef(null);
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    if (bodyRef.current) {
-      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-    }
-  }, [messages, streamingPhases]);
-
-  function handleSend() {
-    const trimmed = inputValue.trim();
-    if (!trimmed || isStreaming || !selectedKnowledgeBaseId) return;
-    onSend(trimmed);
-    setInputValue("");
-  }
-
-  function handleKeyDown(event) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      handleSend();
-    }
-  }
-
-  return (
-    <div className="conversation">
-      {messages.length === 0 ? (
-        <div className="welcome-center">
-          <div className="welcome-card">
-            <h1 className="welcome-title">
-              要筛选哪些合同？
-            </h1>
-          </div>
-        </div>
-      ) : (
-        <div className="conversation-body" ref={bodyRef}>
-          {messages.map((msg) => (
-            <ChatBubble
-              key={msg.id}
-              message={msg}
-              viewingItemId={viewingItemId}
-              onViewEvidence={onViewEvidence}
-              onCopyAudit={() => onCopyAudit(msg)}
-            />
-          ))}
-          {displayStreaming && (
-            <div className="chat-bubble agent">
-              <span className="bubble-label">Agent</span>
-              <div className="bubble-content">
-                {streamingPhases && streamingPhases.length > 0 ? (
-                  <div>
-                    {streamingPhases.map((phase) => (
-                      <div
-                        key={phase.key}
-                        className={`streaming-phase${phase.done ? " is-done" : ""}${!phase.done && phase === streamingPhases[streamingPhases.length - 1] ? " is-active" : ""}`}
-                      >
-                        <span className="phase-icon">
-                          {phase.done ? <CheckIcon /> : phase === streamingPhases[streamingPhases.length - 1] ? <BrainIcon /> : <SearchIcon />}
-                        </span>
-                        <span>{phase.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <span>正在处理...</span>
-                )}
-                <span className="streaming-cursor" style={{ marginLeft: "2px" }} />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Chat input bar */}
-      <div className="chat-input-bar">
-        <div className="kb-toolbar">
-          <label className="kb-selector">
-            <span>知识库</span>
-            <select
-              value={selectedKnowledgeBaseId || ""}
-              onChange={(event) => onKnowledgeBaseChange(event.target.value)}
-              disabled={isStreaming || isKnowledgeBaseLoading || knowledgeBases.length === 0}
-            >
-              <option value="">
-                {isKnowledgeBaseLoading ? "正在加载知识库..." : "请选择知识库"}
-              </option>
-              {knowledgeBases.map((kb) => (
-                <option key={kb.id} value={kb.id}>
-                  {kb.name} · {kb.document_count} 份文档
-                </option>
-              ))}
-            </select>
-          </label>
-          <span className={`kb-state${knowledgeBaseError ? " is-error" : ""}`}>
-            {knowledgeBaseError ? "请选择知识库" : selectedKnowledgeBaseId ? "已连接当前知识库" : "选择知识库后开始筛选"}
-          </span>
-        </div>
-        <div className="chat-input-row">
-          <button className="input-plus" type="button" aria-label="添加附件">
-            <NewChatIcon />
-          </button>
-          <textarea
-            ref={inputRef}
-            className="chat-input"
-            value={inputValue}
-            onChange={(event) => setInputValue(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="描述你要找的合同，例如：筛出本季度到期的外包合同..."
-            rows={1}
-            disabled={isStreaming}
-          />
-          <button
-            className="chat-send"
-            type="button"
-            onClick={handleSend}
-            disabled={isStreaming || !inputValue.trim() || !selectedKnowledgeBaseId}
-            aria-label="发送消息"
-          >
-            <SendIcon /> 发送
-          </button>
-        </div>
-        <div className="chat-hints">
-          {promptExamples.slice(0, 2).map((prompt) => (
-            <button
-              className="btn btn-secondary btn-small"
-              key={prompt}
-              type="button"
-              onClick={() => setInputValue(prompt)}
-              disabled={isStreaming || !selectedKnowledgeBaseId}
-            >
-              {prompt}
-            </button>
-          ))}
-          <span className="muted" style={{ fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", marginLeft: "auto" }}>
-            Enter 发送 · Shift+Enter 换行
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit }) {
-  const strategyLines = strategyToText(message.strategy).split("\n").filter(Boolean);
-  const resultItems = Array.isArray(message.results) ? message.results : [];
-
-  return (
-    <div className={`chat-bubble ${message.role}`}>
-      <span className="bubble-label">
-        {message.role === "user" ? "你" : "Agent"}
-      </span>
-      <div className="bubble-content">
-        {message.content && (
-          <p style={{ whiteSpace: "pre-wrap" }}>{message.content}</p>
-        )}
-
-        {/* Strategy summary (agent messages) */}
-        {strategyLines.length > 0 && (
-          <div className="bubble-strategy">
-            <p className="strategy-title">检索策略</p>
-            <ol style={{ margin: 0, paddingLeft: "16px", fontSize: "var(--text-sm)", color: "var(--fg-2)", display: "grid", gap: "var(--space-1)" }}>
-              {strategyLines.map((s, i) => (
-                <li key={i}>{s}</li>
-              ))}
-            </ol>
-          </div>
-        )}
-
-        <ResultSet
-          items={resultItems}
-          taskId={message.taskId}
-          viewingItemId={viewingItemId}
-          onViewEvidence={onViewEvidence}
-        />
-      </div>
-    </div>
-  );
-}
-
-/* ─── Search intelligence ────────────────────────────────────────── */
-
-function smartFilter(query) {
-  const q = query.toLowerCase();
-  const filters = { risk: "全部", status: "全部", source: "全部" };
-
-  // Keyword → filter mapping
-  if (q.includes("高") && (q.includes("风险") || q.includes("优先"))) {
-    filters.risk = "高";
-  }
-  if (q.includes("续签") || q.includes("到期") || q.includes("窗口")) {
-    filters.status = "续签评估";
-  }
-  if (q.includes("履约") || q.includes("延期") || q.includes("交付")) {
-    filters.source = "履约记录";
-  }
-  if (q.includes("审批") || q.includes("变更")) {
-    filters.source = q.includes("履约") ? filters.source : "审批单";
-  }
-  if (q.includes("外包")) {
-    filters.source = "供应商评级";
-  }
-  if (q.includes("补充协议") || q.includes("附件")) {
-    filters.status = "待补充";
-  }
-
-  const results = filterContracts(contracts, filters);
-  return { filters, results };
-}
-
-function buildStrategySteps(query, filters) {
-  const steps = [];
-  const q = query.toLowerCase();
-
-  steps.push(
-    `字段过滤：限定${q.includes("外包") ? "外包、运维" : "采购、外包、运维"}类合同；到期窗口为未来 90 天`
-  );
-  steps.push(
-    `语义召回：匹配"${q.includes("续签") ? "续签" : "到期"}、${q.includes("履约") ? "履约异常" : "金额"}、${q.includes("风险") ? "风险评级" : "供应商"}等相关表达`
-  );
-  steps.push(
-    `证据复核：合并合同正文${filters.source !== "全部" ? "、" + filters.source : "、审批单、履约记录"}，要求每条至少 2 个证据点`
-  );
-  steps.push("权限裁剪：仅展示当前角色可访问的合同与附件片段");
-  steps.push("综合排序：按风险等级、到期紧迫度、匹配分降序");
-
-  return steps;
-}
 
 /* ─── Main App ───────────────────────────────────────────────────── */
 
@@ -643,23 +274,6 @@ export default function App() {
     }
   }
 
-  function copyText(text, message) {
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).then(
-        () => showToast(message),
-        () => showToast("复制失败，请手动复制")
-      );
-      return;
-    }
-    const area = document.createElement("textarea");
-    area.value = text;
-    document.body.appendChild(area);
-    area.select();
-    document.execCommand("copy");
-    area.remove();
-    showToast(message);
-  }
-
   function viewEvidence(item) {
     setEvidenceItem(item);
     setEvidenceOpen(true);
@@ -775,21 +389,6 @@ export default function App() {
     setEvidenceItem(null);
     setEvidenceOpen(false);
     loadHistoricalConversation(conversation);
-  }
-
-  function handleCopyAudit(msg) {
-    const resultItems = Array.isArray(msg?.results) ? msg.results : [];
-    if (resultItems.length === 0) return;
-    const text = resultItems
-      .map((item) =>
-        buildAuditText({
-          query: msg.content || "",
-          filters: DEFAULT_FILTERS,
-          item
-        })
-      )
-      .join("\n\n---\n\n");
-    copyText(text, "已复制审计包");
   }
 
   function handleKnowledgeBaseChange(kbId) {
@@ -1024,47 +623,32 @@ export default function App() {
     }
   }
 
+  const selectedKnowledgeBase = knowledgeBases.find((kb) => kb.id === selectedKnowledgeBaseId);
+  const latestAgentMessage = [...messages].reverse().find((message) => message.role === "agent" && Array.isArray(message.results));
+  const latestResults = Array.isArray(latestAgentMessage?.results) ? latestAgentMessage.results : [];
+  const taskContext = {
+    knowledgeBaseName: selectedKnowledgeBase?.name || (selectedKnowledgeBaseId ? "当前知识库" : "未选择知识库"),
+    taskStatus: isStreaming ? "running" : activeConversation?.status || (latestAgentMessage ? "done" : ""),
+    resultCount: latestResults.length,
+    conditionCount: 0,
+    evidencePolicy: null
+  };
+
   return (
     <>
-      <main className={`workspace${historyOpen ? "" : " history-collapsed"}`} data-od-id="workspace">
-        {/* Left: Conversation History */}
-        <div className={`chat-col${historyOpen ? "" : " collapsed"}`} aria-label="对话历史面板">
-          <ConversationHistory
-            conversations={conversations}
-            activeId={activeConversationId}
-            onSelect={selectConversation}
-            onNew={newConversation}
-            onDelete={deleteConversation}
-            onLogout={handleLogout}
-          />
-        </div>
-
-        {/* Middle: Chat View */}
-        <div className="main-col">
-          <div className="main-stage-header">
-            <button
-              className="sidebar-toggle"
-              type="button"
-              aria-label={historyOpen ? "收起历史面板" : "展开历史面板"}
-              aria-pressed={historyOpen}
-              onClick={toggleHistory}
-              title="对话历史"
-            >
-              <HistoryIcon />
-            </button>
-            <div className="main-header-actions">
-              <button
-                className="sidebar-toggle"
-                type="button"
-                aria-label={evidenceOpen ? "收起证据面板" : "展开证据面板"}
-                aria-pressed={evidenceOpen}
-                onClick={toggleEvidence}
-                title="证据详情"
-              >
-                <EyeIcon />
-              </button>
-            </div>
-          </div>
+      <WorkspaceShell
+        historyOpen={historyOpen}
+        evidenceOpen={evidenceOpen}
+        onToggleHistory={toggleHistory}
+        onToggleEvidence={toggleEvidence}
+        conversations={conversations}
+        activeConversationId={activeConversationId}
+        onSelectConversation={selectConversation}
+        onNewConversation={newConversation}
+        onDeleteConversation={deleteConversation}
+        onLogout={handleLogout}
+        taskContext={taskContext}
+        chat={
           <ChatView
             messages={messages}
             isStreaming={isStreaming}
@@ -1073,7 +657,6 @@ export default function App() {
             onSend={handleSend}
             onViewEvidence={viewEvidence}
             viewingItemId={evidenceItem?.id}
-            onCopyAudit={handleCopyAudit}
             inputValue={inputValue}
             setInputValue={setInputValue}
             knowledgeBases={knowledgeBases}
@@ -1081,17 +664,16 @@ export default function App() {
             onKnowledgeBaseChange={handleKnowledgeBaseChange}
             isKnowledgeBaseLoading={knowledgeBaseLoading}
             knowledgeBaseError={knowledgeBaseError}
+            inputRef={inputRef}
           />
-        </div>
-
-        {/* Right: Evidence Panel */}
-        <div className={`evidence-col${evidenceOpen ? "" : " collapsed"}`} aria-label="证据详情面板">
+        }
+        evidence={
           <EvidencePanel
             item={evidenceItem}
             onClose={() => setEvidenceOpen(false)}
           />
-        </div>
-      </main>
+        }
+      />
 
       <Toast message={toast.message} visible={toast.visible} />
     </>

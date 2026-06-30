@@ -136,6 +136,27 @@ svg { display: block; stroke-width: 1.5; }
   padding: 14px 24px 10px;
   background: var(--color-snow);
 }
+.task-context-bar {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--color-ash);
+  font-size: var(--text-xs);
+  line-height: 20px;
+}
+.task-context-bar span {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-fog);
+  border-radius: var(--radius-sm);
+  background: var(--color-snow);
+  padding: 4px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .main-header-actions {
   display: inline-flex;
   align-items: center;
@@ -808,6 +829,10 @@ select:focus-visible,
 @media (max-width: 560px) {
   .main-stage-header {
     padding-inline: 12px;
+  }
+  .task-context-bar {
+    justify-content: flex-start;
+    overflow-x: auto;
   }
   .conversation-body {
     padding: var(--space-4);
