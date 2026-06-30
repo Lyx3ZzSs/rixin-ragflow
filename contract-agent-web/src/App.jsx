@@ -12,6 +12,7 @@ import {
   strategyToText,
   taskPhaseToLabel
 } from "./logic.js";
+import { KeyValue } from "./components/ui/KeyValue.jsx";
 import { Toast } from "./components/ui/Toast.jsx";
 import {
   HistoryIcon,
@@ -238,15 +239,6 @@ function EvidencePanel({ item, onClose }) {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function KeyValue({ label, value }) {
-  return (
-    <div className="kv">
-      <span>{label}</span>
-      <strong>{value}</strong>
     </div>
   );
 }
