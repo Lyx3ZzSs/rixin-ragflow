@@ -79,10 +79,23 @@ test("send starts screening directly after parsing conditions", () => {
 });
 
 test("result cards expose original file downloads without opening evidence", () => {
-  assert.match(appSource, /下载原文件/, "result cards should expose an original file download action");
-  assert.match(appSource, /item\.downloadUrl &&/, "download action should require a mapped download URL");
-  assert.match(appSource, /event\.stopPropagation\(\)/, "download clicks should not trigger evidence viewing");
-  assert.match(appSource, /className="btn btn-secondary btn-small download-file-button"/, "download action should use compact button styling");
+  const evidenceActionSource = readFileSync(new URL("./components/results/EvidenceActionRow.jsx", import.meta.url), "utf8");
+
+  assert.match(evidenceActionSource, /下载原文件/, "result cards should expose an original file download action");
+  assert.match(evidenceActionSource, /downloadUrl &&/, "download action should require a mapped download URL");
+  assert.match(evidenceActionSource, /event\.stopPropagation\(\)/, "download clicks should not trigger evidence viewing");
+  assert.match(evidenceActionSource, /className="btn btn-secondary btn-small download-file-button"/, "download action should use compact button styling");
+});
+
+test("result rendering is split into focused P0 components", () => {
+  const resultSetSource = readFileSync(new URL("./components/results/ResultSet.jsx", import.meta.url), "utf8");
+  const resultCardSource = readFileSync(new URL("./components/results/ContractResultCard.jsx", import.meta.url), "utf8");
+  const evidenceActionSource = readFileSync(new URL("./components/results/EvidenceActionRow.jsx", import.meta.url), "utf8");
+
+  assert.match(resultSetSource, /function ResultSet/, "ResultSet should own result collection rendering");
+  assert.match(resultCardSource, /function ContractResultCard/, "ContractResultCard should render one contract result");
+  assert.match(evidenceActionSource, /event\.stopPropagation\(\)/, "download clicks should still avoid opening evidence");
+  assert.match(evidenceActionSource, /下载原文件/, "original file download should remain available");
 });
 
 test("evidence panel does not show placeholder review actions", () => {

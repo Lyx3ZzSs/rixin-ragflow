@@ -8,10 +8,10 @@ import {
   filterContracts,
   normalizeTimelineItems,
   resolvePollingConfig,
-  statusClass,
   strategyToText,
   taskPhaseToLabel
 } from "./logic.js";
+import { ResultSet } from "./components/results/ResultSet.jsx";
 import { KeyValue } from "./components/ui/KeyValue.jsx";
 import { Toast } from "./components/ui/Toast.jsx";
 import {
@@ -19,7 +19,6 @@ import {
   ChevronRightIcon,
   SendIcon,
   DocumentIcon,
-  DownloadIcon,
   TrashIcon,
   NewChatIcon,
   EyeIcon,
@@ -429,73 +428,12 @@ function ChatBubble({ message, viewingItemId, onViewEvidence, onCopyAudit }) {
           </div>
         )}
 
-        {/* Agent result cards */}
-        {resultItems.length > 0 && (
-          <div className="chat-results-grid">
-            {resultItems.map((item, index) => {
-              const evidenceCount = Array.isArray(item.evidence) ? item.evidence.length : 0;
-
-              return (
-                <div
-                  key={item.id || `${item.title}-${index}`}
-                  className={`chat-result-card${viewingItemId === item.id ? " is-viewing" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onViewEvidence({ ...item, taskId: message.taskId })}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      onViewEvidence({ ...item, taskId: message.taskId });
-                    }
-                  }}
-                >
-                  <div className="result-top">
-                    <div>
-                      <h3>{item.title}</h3>
-                      <div className="result-meta">
-                        <span>{item.id}</span>
-                        <span>{item.supplier}</span>
-                        <span>{item.amount}</span>
-                        <span>{item.expiry}</span>
-                      </div>
-                    </div>
-                    <span className="score">{item.score}%</span>
-                  </div>
-                  <p className="excerpt">{item.reason}</p>
-                  <div className="hint-row mt-3">
-                    <span className={`status ${statusClass(item.risk)}`}>{item.risk}风险</span>
-                    <span className="status status-strong">{item.status}</span>
-                    <span className="status">{item.owner}</span>
-                  </div>
-                  <div className="evidence-line">
-                    {viewingItemId === item.id ? (
-                      <span className="viewing-badge">
-                        <EyeIcon /> 正在查看证据
-                      </span>
-                    ) : (
-                      <span className="source-toggle">
-                        <EyeIcon /> 查看 {evidenceCount} 条证据
-                      </span>
-                    )}
-                    {item.downloadUrl && (
-                      <a
-                        className="btn btn-secondary btn-small download-file-button"
-                        href={item.downloadUrl}
-                        download
-                        onClick={(event) => {
-                          event.stopPropagation();
-                        }}
-                        title="下载原文件"
-                      >
-                        <DownloadIcon /> 下载原文件
-                      </a>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <ResultSet
+          items={resultItems}
+          taskId={message.taskId}
+          viewingItemId={viewingItemId}
+          onViewEvidence={onViewEvidence}
+        />
       </div>
     </div>
   );

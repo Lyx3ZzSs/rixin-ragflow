@@ -471,6 +471,26 @@ svg { display: block; stroke-width: 1.5; }
   font-size: var(--text-sm);
 }
 
+.result-set {
+  margin-top: var(--space-3);
+}
+.result-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border: 1px solid var(--color-fog);
+  border-radius: var(--radius-sm);
+  background: var(--color-paper);
+  padding: 8px 12px;
+  color: var(--color-smoke);
+  font-size: var(--text-sm);
+  line-height: 20px;
+}
+.result-summary strong {
+  color: var(--color-ink-black);
+  font-weight: 500;
+}
 .chat-results-grid {
   display: grid;
   gap: var(--space-2);
@@ -737,7 +757,8 @@ svg { display: block; stroke-width: 1.5; }
 button:focus-visible,
 textarea:focus-visible,
 input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+.chat-result-card:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
 }
