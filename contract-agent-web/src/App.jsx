@@ -342,6 +342,8 @@ export default function App() {
       const result = await getScreeningResults(taskId);
       if (!mountedRef.current) return;
       const items = Array.isArray(result?.items) ? result.items : [];
+      const resultConditions = normalizeParsedConditions(result?.conditions);
+      const resultEvidencePolicy = result?.evidence_policy || result?.evidencePolicy ? normalizeEvidencePolicy(result?.evidence_policy || result?.evidencePolicy) : null;
       const messages = [
         {
           id: `${taskId}-prompt`,
@@ -354,6 +356,8 @@ export default function App() {
           taskId,
           content: items.length > 0 ? `筛选完成，命中 ${items.length} 份合同。` : "筛选完成，没有命中合同。",
           strategy: result?.strategy,
+          conditionCount: resultConditions.length,
+          evidencePolicy: resultEvidencePolicy,
           results: items
         }
       ];
@@ -531,6 +535,8 @@ export default function App() {
         taskId,
         content: items.length > 0 ? `筛选完成，命中 ${items.length} 份合同。` : "筛选完成，没有命中合同。",
         strategy: result?.strategy,
+        conditionCount: conditions.length,
+        evidencePolicy,
         results: items
       };
 
@@ -594,7 +600,9 @@ export default function App() {
         {
           id: nextMessageId(),
           role: "agent",
-          content: conditions.length > 0 ? "已解析筛选条件，开始筛选。" : "未解析到明确条件，按原始描述开始筛选。"
+          content: conditions.length > 0 ? "已解析筛选条件，开始筛选。" : "未解析到明确条件，按原始描述开始筛选。",
+          conditionCount: conditions.length,
+          evidencePolicy
         }
       ]);
       await runScreeningWithConditions({
@@ -625,13 +633,14 @@ export default function App() {
 
   const selectedKnowledgeBase = knowledgeBases.find((kb) => kb.id === selectedKnowledgeBaseId);
   const latestAgentMessage = [...messages].reverse().find((message) => message.role === "agent" && Array.isArray(message.results));
+  const latestContextMessage = [...messages].reverse().find((message) => message.role === "agent" && (Number.isFinite(Number(message.conditionCount)) || message.evidencePolicy));
   const latestResults = Array.isArray(latestAgentMessage?.results) ? latestAgentMessage.results : [];
   const taskContext = {
     knowledgeBaseName: selectedKnowledgeBase?.name || (selectedKnowledgeBaseId ? "当前知识库" : "未选择知识库"),
     taskStatus: isStreaming ? "running" : activeConversation?.status || (latestAgentMessage ? "done" : ""),
     resultCount: latestResults.length,
-    conditionCount: 0,
-    evidencePolicy: null
+    conditionCount: latestContextMessage?.conditionCount ?? 0,
+    evidencePolicy: latestContextMessage?.evidencePolicy || null
   };
 
   return (

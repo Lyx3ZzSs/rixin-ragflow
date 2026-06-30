@@ -168,3 +168,11 @@ test("workspace and chat rendering are split into P0 components", () => {
   assert.match(chatViewSource, /function ChatView/, "ChatView should own conversation layout");
   assert.match(promptComposerSource, /知识库/, "PromptComposer should keep knowledge base selection");
 });
+
+test("task context uses parsed condition and evidence policy metadata", () => {
+  assert.match(appSource, /conditionCount:\s*conditions\.length/, "parsed condition count should be persisted on agent messages");
+  assert.match(appSource, /evidencePolicy,\s*\n\s*results:/, "result messages should retain parsed evidence policy metadata");
+  assert.match(appSource, /latestContextMessage/, "task context should look up the latest message carrying context metadata");
+  assert.match(appSource, /conditionCount:\s*latestContextMessage\?\.conditionCount\s*\?\?\s*0/, "task context should use persisted condition count");
+  assert.match(appSource, /evidencePolicy:\s*latestContextMessage\?\.evidencePolicy\s*\|\|\s*null/, "task context should use persisted evidence policy");
+});
